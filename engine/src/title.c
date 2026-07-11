@@ -3,6 +3,7 @@
 #include "ns.h"
 #include "gool.h"
 #include "level.h"
+#include "card.h"
 #include "formats/mdat.h"
 #include "formats/imag.h"
 
@@ -177,7 +178,9 @@ int TitleLoadState() {
   GfxInitMatrices();
   switch (title->state) {
   case 5: /* main menu */
+    CardBrowserResumeBeforeTitleReset();
     LevelResetGlobals(1);
+    CardBrowserResumeAfterTitleReset();
     eid = NSStringToEID("0c_pZ");
     type = 3;
     break;

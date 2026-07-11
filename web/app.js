@@ -44,6 +44,7 @@ const runtimeLog = document.querySelector("#runtimeLog");
 const streamFiles = new Map();
 const logLines = ["C1 loader ready."];
 let module;
+let mountedAssets;
 let launching = false;
 let importingDisc = false;
 let muted = false;
@@ -62,6 +63,15 @@ window.addEventListener("unhandledrejection", (event) => {
     window.__consoleErrors.push(message);
     appendLog(`Unhandled rejection: ${message}`, "err");
   }
+});
+
+function flushBrowserResume() {
+  module?._C1FlushBrowserResume?.();
+}
+
+window.addEventListener("pagehide", flushBrowserResume);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushBrowserResume();
 });
 
 requiredCountNode.textContent = String(LEVELS.length);
@@ -256,20 +266,27 @@ async function launch() {
       if (!String(error).includes("File exists")) throw error;
     }
 
+    const selectedBoot = Number(bootLevel.value);
     const entries = [...streamFiles.entries()].sort(([a], [b]) => a.localeCompare(b));
     const totalBytes = entries.reduce((sum, [, file]) => sum + file.size, 0);
+    const completePairs = LEVELS.filter(([lid]) => hasLevelPair(lid)).length;
     let loadedBytes = 0;
 
     for (const [name, file] of entries) {
       progressLabel.textContent = `Mounting ${name} · ${formatBytes(loadedBytes)} / ${formatBytes(totalBytes)}`;
       const contents = new Uint8Array(await file.arrayBuffer());
-      module.FS.writeFile(`/streams/${name}`, contents);
+      module.FS.writeFile(`/streams/${name}`, contents, { canOwn: true });
       loadedBytes += file.size;
       progressBar.style.width = `${Math.max(4, (loadedBytes / totalBytes) * 94)}%`;
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
 
-    const selectedBoot = Number(bootLevel.value);
+    mountedAssets = { files: entries.length, completePairs, totalBytes };
+    streamFiles.clear();
+    entries.length = 0;
+    folderInput.value = "";
+    fileInput.value = "";
+    appendLog("Released the source disc references after mounting game data.");
     progressBar.style.width = "100%";
     progressLabel.textContent = "Starting C1…";
     appendLog(`Starting at level 0x${selectedBoot.toString(16)}.`);
@@ -373,6 +390,13 @@ function syncVirtualPad() {
   module?._C1SetVirtualPad?.(virtualPadState);
 }
 
+function resumeBrowserAudio() {
+  module?.SDL2?.audioContext?.resume?.();
+}
+
+window.addEventListener("pointerdown", resumeBrowserAudio);
+window.addEventListener("keydown", resumeBrowserAudio);
+
 for (const button of document.querySelectorAll("[data-pad-bit]")) {
   const press = (event) => {
     event.preventDefault();
@@ -406,12 +430,24 @@ document.addEventListener("keydown", (event) => {
 
 window.__c1Debug = {
   get module() { return module; },
-  get recognizedFiles() { return streamFiles.size; },
-  get completePairs() { return LEVELS.filter(([lid]) => hasLevelPair(lid)).length; },
+  get recognizedFiles() { return mountedAssets?.files ?? streamFiles.size; },
+  get completePairs() { return mountedAssets?.completePairs ?? LEVELS.filter(([lid]) => hasLevelPair(lid)).length; },
   get audio() {
     return module ? {
       callbacks: module._C1GetAudioCallbackCount?.() ?? 0,
       peak: module._C1GetAudioPeak?.() ?? 0,
+      clips: module._C1GetAudioClipCount?.() ?? 0,
+      deadlineMisses: module._C1GetAudioDeadlineMissCount?.() ?? 0,
+      maxGapUs: module._C1GetAudioMaxGapUs?.() ?? 0,
+      maxCallbackUs: module._C1GetAudioMaxCallbackUs?.() ?? 0,
+      musicPeak: module._C1GetAudioMusicPeak?.() ?? 0,
+      sfxPeak: module._C1GetAudioSfxPeak?.() ?? 0,
+      musicRms: module._C1GetAudioMusicRms?.() ?? 0,
+      sfxRms: module._C1GetAudioSfxRms?.() ?? 0,
+      activeSfx: module._C1GetAudioActiveSfx?.() ?? 0,
+      sampleCacheHits: module._C1GetSampleCacheHits?.() ?? 0,
+      sampleCacheMisses: module._C1GetSampleCacheMisses?.() ?? 0,
+      sampleCacheBytes: module._C1GetSampleCacheBytes?.() ?? 0,
     } : null;
   },
   get card() {
@@ -426,6 +462,13 @@ window.__c1Debug = {
       titleState: module._C1GetTitleState?.() ?? -1,
       loadedTitleState: module._C1GetLoadedTitleState?.() ?? -1,
       transitionState: module._C1GetTitleTransitionState?.() ?? -1,
+      resumeResult: module._C1GetBrowserResumeResult?.() ?? -1,
+      levelCount: module._C1GetLevelCount?.() ?? 0,
+      keyCount: module._C1GetKeyCount?.() ?? 0,
+      gemCount: module._C1GetGemCount?.() ?? 0,
+      sfxVolume: module._C1GetSfxVolume?.() ?? 0,
+      musicVolume: module._C1GetMusicVolume?.() ?? 0,
+      mono: module._C1GetMono?.() ?? 0,
     } : null;
   },
 };

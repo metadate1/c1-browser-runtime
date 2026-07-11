@@ -16,6 +16,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
+#include <emscripten/heap.h>
 extern lid_t cur_lid;
 extern title_struct *title;
 
@@ -34,12 +35,22 @@ EMSCRIPTEN_KEEPALIVE int C1GetCurrentLid(void) {
 EMSCRIPTEN_KEEPALIVE int C1GetTitleTransitionState(void) {
   return title ? title->transition_state : -1;
 }
+
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetHeapSize(void) {
+  return (uint32_t)emscripten_get_heap_size();
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetHeapAllocatedEnd(void) {
+  return (uint32_t)*emscripten_get_sbrk_ptr();
+}
+
 #endif
 
 #include "pc/init.h"
 #include "pc/time.h"
 #include "pc/gfx/gl.h"
 #include "pc/gfx/soft.h" // for ext only
+#include "pc/gfx/tex.h"
 
 /* .data */
 const ns_subsystem subsys[21] = {
@@ -99,6 +110,49 @@ extern gl_context context;
 void CoreLoop(lid_t lid);
 void CoreFrame(void);
 
+#ifdef __EMSCRIPTEN__
+static double browser_next_frame_ms;
+static uint32_t browser_last_frame_us;
+static uint32_t browser_max_frame_us;
+
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetLastFrameUs(void) {
+  return browser_last_frame_us;
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetMaxFrameUs(void) {
+  return browser_max_frame_us;
+}
+
+static void CoreBrowserFrame(void) {
+  const double frame_ms = 1000.0 / 30.0;
+  double start, now = emscripten_get_now();
+
+  if (browser_next_frame_ms == 0.0)
+    browser_next_frame_ms = now;
+  if (now + 0.25 < browser_next_frame_ms)
+    return;
+  start = now;
+  CoreFrame();
+  browser_last_frame_us = (uint32_t)((emscripten_get_now() - start) * 1000.0);
+  if (browser_last_frame_us > browser_max_frame_us)
+    browser_max_frame_us = browser_last_frame_us;
+  if (done) return;
+  browser_next_frame_ms += frame_ms;
+  if (now - browser_next_frame_ms > frame_ms * 2.0)
+    browser_next_frame_ms = now + frame_ms;
+}
+#endif
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureOwnedCount(void) {
+  return TextureOwnedCount();
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureOwnedBytes(void) {
+  return TextureOwnedBytes();
+}
+#endif
+
 //----- (80011D88) --------------------------------------------------------
 int main(int argc, char **argv) {
   lid_t boot_lid = LID_BOOTLEVEL;
@@ -157,6 +211,7 @@ void CoreFrame(void) {
 
 #ifdef __EMSCRIPTEN__
   if (done) {
+    CardBrowserResumeFlush();
     cur_display_flags = 0;
     NSKill(&ns);
     _kill();
@@ -170,6 +225,7 @@ void CoreFrame(void) {
   }
 
   CardUpdate();
+  CardBrowserResumeUpdate();
 
     lid = ns.ldat->lid;
     is_pause_lid = lid != LID_TITLE && lid != LID_LEVELEND && lid != LID_INTRO;
@@ -247,6 +303,7 @@ void CoreFrame(void) {
     NSUpdate(-1);
 #endif
     LevelSpawnObjects();
+    TexturesBeginFrame();
     if (!paused) {
       header = (zone_header*)cur_zone->items[0];
       if (header->gfx.flags & (ZONE_FLAG_DARK2 | ZONE_FLAG_LIGHTNING))
@@ -296,6 +353,7 @@ void CoreFrame(void) {
 
 void CoreLoop(lid_t lid) {
   LevelInitGlobals();
+  CardBrowserResumeLoad();
   NSInit(&ns, lid);
   if (done || !ns.ldat)
     return;
@@ -305,7 +363,9 @@ void CoreLoop(lid_t lid) {
   item_pool2 = (1 << 10) | (1 << 20);
 #endif /* GOD_MODE */
 #ifdef __EMSCRIPTEN__
-  emscripten_set_main_loop(CoreFrame, 30, 1);
+  browser_next_frame_ms = 0.0;
+  browser_last_frame_us = browser_max_frame_us = 0;
+  emscripten_set_main_loop(CoreBrowserFrame, 0, 1);
 #else
   do {
     CoreFrame();

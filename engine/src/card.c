@@ -59,6 +59,13 @@ static int card_current_slot = -1;
 static c1_card_snapshot card_staged_snapshot;
 static int card_scan_active;
 static unsigned int card_scan_ticks;
+static c1_card_payload browser_resume_last_payload;
+static unsigned int browser_resume_ticks;
+static int browser_resume_enabled;
+static int browser_resume_result;
+static c1_card_payload browser_resume_title_payload;
+static int browser_resume_title_restore_pending;
+static int browser_resume_title_protection;
 
 #ifdef C1_BROWSER
 
@@ -161,6 +168,74 @@ EM_JS(int, C1BrowserCardStorage,
       return -1;
     }
 
+    return -1;
+  });
+
+EM_JS(int, C1BrowserResumeStorage,
+  (int operation, uint8_t *buffer, int length), {
+    const key = "c1.browser-resume.v1";
+    const schema = "c1-browser-resume";
+    const version = 1;
+
+    const quarantine = (raw) => {
+      try {
+        globalThis.localStorage.setItem(
+          `${key}.invalid.${Date.now()}`, raw);
+      } catch (error) {
+        console.warn("C1 could not preserve an invalid resume record", error);
+      }
+      globalThis.localStorage.removeItem(key);
+    };
+
+    try {
+      if (!globalThis.localStorage) return -1;
+      if (operation === 2) {
+        const raw = globalThis.localStorage.getItem(key);
+        if (raw !== null) quarantine(raw);
+        return 1;
+      }
+      if (length !== 128) return -1;
+      if (operation === 0) {
+        const raw = globalThis.localStorage.getItem(key);
+        if (raw === null) return 0;
+        let record;
+        try { record = JSON.parse(raw); }
+        catch (error) { quarantine(raw); return -2; }
+        if (record && record.schema === schema && record.version > version) {
+          console.warn("C1 resume record is from a newer version");
+          return -1;
+        }
+        if (!record || record.schema !== schema || record.version !== version ||
+            typeof record.payload !== "string") {
+          quarantine(raw);
+          return -2;
+        }
+        let binary;
+        try { binary = atob(record.payload); }
+        catch (error) { quarantine(raw); return -2; }
+        if (binary.length !== length) { quarantine(raw); return -2; }
+        for (let i = 0; i < length; ++i) {
+          HEAPU8[buffer + i] = binary.charCodeAt(i);
+        }
+        return 1;
+      }
+      if (operation === 1) {
+        let binary = "";
+        for (let i = 0; i < length; ++i) {
+          binary += String.fromCharCode(HEAPU8[buffer + i]);
+        }
+        globalThis.localStorage.setItem(key, JSON.stringify({
+          schema,
+          version,
+          payload: btoa(binary),
+          updatedAt: Date.now()
+        }));
+        return 1;
+      }
+    } catch (error) {
+      console.error("C1 browser resume storage failed", error);
+      return -1;
+    }
     return -1;
   });
 
@@ -285,9 +360,9 @@ static void CardCreatePayload(c1_card_payload *payload) {
 static void CardRestorePayload(const c1_card_payload *payload) {
   uint32_t progress = CardReadU32(payload, C1_CARD_PROGRESS_OFFSET);
 
+  init_life_count = (int32_t)CardReadU32(payload, C1_CARD_INITIAL_LIVES_OFFSET);
   LevelResetGlobals(1);
   level_count = (int32_t)CardReadU32(payload, C1_CARD_LEVEL_COUNT_OFFSET);
-  init_life_count = (int32_t)CardReadU32(payload, C1_CARD_INITIAL_LIVES_OFFSET);
   dword_8006190C = CardReadU32(payload, C1_CARD_UNKNOWN_6190C_OFFSET);
   mono = (int32_t)CardReadU32(payload, C1_CARD_MONO_OFFSET);
   sfx_vol = CardReadU32(payload, C1_CARD_SFX_VOLUME_OFFSET);
@@ -299,6 +374,129 @@ static void CardRestorePayload(const c1_card_payload *payload) {
   levels_unlocked = level_count;
   cur_map_level = level_count;
 }
+
+int CardBrowserResumeLoad(void) {
+#ifdef C1_BROWSER
+  c1_card_payload payload;
+#endif
+
+  browser_resume_ticks = 0;
+  browser_resume_title_restore_pending = 0;
+#ifdef C1_BROWSER
+  browser_resume_title_protection = 1;
+  browser_resume_result = C1BrowserResumeStorage(
+    C1_CARD_STORAGE_READ, payload.bytes, C1_CARD_PAYLOAD_SIZE);
+  if (browser_resume_result == C1_CARD_STORAGE_OK) {
+    if (!CardPayloadValid(&payload)) {
+      browser_resume_result = C1_CARD_STORAGE_CORRUPT;
+      C1BrowserResumeStorage(C1_CARD_STORAGE_FORMAT, NULL, 0);
+      CardCreatePayload(&browser_resume_last_payload);
+      browser_resume_enabled = 1;
+      return browser_resume_result;
+    }
+    CardRestorePayload(&payload);
+    browser_resume_last_payload = payload;
+    browser_resume_enabled = 1;
+    return browser_resume_result;
+  }
+  if (browser_resume_result == C1_CARD_STORAGE_EMPTY) {
+    CardCreatePayload(&browser_resume_last_payload);
+    browser_resume_enabled = 1;
+    return browser_resume_result;
+  }
+  if (browser_resume_result == C1_CARD_STORAGE_CORRUPT) {
+    CardCreatePayload(&browser_resume_last_payload);
+    browser_resume_enabled = 1;
+    return browser_resume_result;
+  }
+  browser_resume_enabled = 0;
+  return browser_resume_result;
+#else
+  browser_resume_title_protection = 0;
+  CardCreatePayload(&browser_resume_last_payload);
+  browser_resume_enabled = 0;
+  browser_resume_result = C1_CARD_STORAGE_EMPTY;
+  return browser_resume_result;
+#endif
+}
+
+void CardBrowserResumeBeforeTitleReset(void) {
+  if (!browser_resume_title_protection)
+    return;
+  CardCreatePayload(&browser_resume_title_payload);
+  browser_resume_title_restore_pending = 1;
+  if (browser_resume_enabled)
+    CardBrowserResumeFlush();
+}
+
+void CardBrowserResumeAfterTitleReset(void) {
+  if (!browser_resume_title_restore_pending)
+    return;
+  CardRestorePayload(&browser_resume_title_payload);
+  browser_resume_title_restore_pending = 0;
+}
+
+int CardBrowserResumeFlush(void) {
+  c1_card_payload payload;
+
+  if (!browser_resume_enabled) return browser_resume_result;
+  CardCreatePayload(&payload);
+  if (memcmp(&payload, &browser_resume_last_payload, sizeof(payload)) == 0)
+    return C1_CARD_STORAGE_OK;
+#ifdef C1_BROWSER
+  browser_resume_result = C1BrowserResumeStorage(
+    C1_CARD_STORAGE_WRITE, payload.bytes, C1_CARD_PAYLOAD_SIZE);
+  if (browser_resume_result != C1_CARD_STORAGE_OK) {
+    browser_resume_enabled = 0;
+    return browser_resume_result;
+  }
+#else
+  browser_resume_result = C1_CARD_STORAGE_OK;
+#endif
+  browser_resume_last_payload = payload;
+  return browser_resume_result;
+}
+
+void CardBrowserResumeUpdate(void) {
+  if (!browser_resume_enabled) return;
+  if (++browser_resume_ticks < 30) return;
+  browser_resume_ticks = 0;
+  CardBrowserResumeFlush();
+}
+
+#ifdef C1_BROWSER
+EMSCRIPTEN_KEEPALIVE int C1FlushBrowserResume(void) {
+  return CardBrowserResumeFlush();
+}
+
+EMSCRIPTEN_KEEPALIVE int C1GetBrowserResumeResult(void) {
+  return browser_resume_result;
+}
+
+EMSCRIPTEN_KEEPALIVE int C1GetLevelCount(void) {
+  return level_count;
+}
+
+EMSCRIPTEN_KEEPALIVE int C1GetKeyCount(void) {
+  return key_count;
+}
+
+EMSCRIPTEN_KEEPALIVE int C1GetGemCount(void) {
+  return gem_count;
+}
+
+EMSCRIPTEN_KEEPALIVE int C1GetSfxVolume(void) {
+  return (int)sfx_vol;
+}
+
+EMSCRIPTEN_KEEPALIVE int C1GetMusicVolume(void) {
+  return (int)mus_vol;
+}
+
+EMSCRIPTEN_KEEPALIVE int C1GetMono(void) {
+  return mono;
+}
+#endif
 
 static void CardCancelScan(void) {
   card_scan_active = 0;

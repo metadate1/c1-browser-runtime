@@ -58,7 +58,9 @@ The engine runs in wasm32 because C1 stores many pointers and tagged references 
 
 The browser port is operational, but C1 is still an incomplete reimplementation of the retail executable. Current browser smoke tests cover full-disc import (88 streams / 44 level pairs), publisher screens, the main menu, password/load/options states, direct level boot, keyboard input, audio, and returning between menus. The options screen renders all four entries and its volume, mono/stereo, and exit controls work.
 
-Browser saves use a 15-slot virtual memory card stored under the versioned `c1.virtual-memory-card.v1` localStorage key. The engine preserves the retail 128-byte payload and card-state handshake. Save, load, rescan, and format behavior have native unit coverage, and the browser backend rejects or marks malformed slot records. Clearing site data also clears these saves.
+Browser persistence has two separate records. The retail 15-slot virtual memory card remains under `c1.virtual-memory-card.v1`, preserving its 128-byte payload and card-state handshake. A checksummed automatic resume snapshot lives under `c1.browser-resume.v1`; it captures progression and options about once per second and when the page is hidden or closed, then restores before the title flow starts. Malformed resume data is quarantined instead of overwriting a valid manual card.
+
+Both records use origin-scoped `localStorage`, not cookies. Always open the same URL (`http://127.0.0.1:4173`) because `localhost`, another port, or another protocol has separate browser storage. Clearing this site’s data removes both manual and automatic progress. The supplied disc image and extracted streams are never stored in browser persistence, so they must be selected again after a refresh.
 
 This is not yet a claim of retail parity. A complete playthrough has not certified every level, boss, bonus room, death/checkpoint path, demo, ending, or long sequence of level transitions. Inherited camera, texture-cache, audio-mixing, and level-specific behavior can still differ from the PlayStation release.
 

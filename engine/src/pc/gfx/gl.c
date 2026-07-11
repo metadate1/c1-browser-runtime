@@ -57,6 +57,8 @@ gl_callbacks callbacks = { 0 };
 rect2 screen = { .x = -256, .y = -120, .w = 512, .h = 240 };
 prim_struct prim_links[2048];
 int image_texid = 0;
+static void *trimem = 0;
+static size_t trimem_capacity = 0;
 
 extern ns_struct ns;
 extern entry *cur_zone;
@@ -106,6 +108,11 @@ int GLKill() {
     free(context.prims_head);
     context.prims_head = 0;
   }
+  if (trimem) {
+    free(trimem);
+    trimem = 0;
+    trimem_capacity = 0;
+  }
   if (textures_inited) {
     TexturesKill();
     textures_inited=0;
@@ -127,6 +134,8 @@ int GLSetupPrims() {
   }
   if (!context.prims_head) // not in orig
     context.prims_head = calloc(1,0x800000);
+  if (!context.prims_head)
+    return ERROR_MALLOC_FAILED;
   GLResetPrims(&context);
   return SUCCESS;
 }
@@ -226,7 +235,7 @@ void GLDrawImage(dim2 *dim, uint8_t *buf, pnt2 *loc) {
 
 void GLDrawPrims(void *data, int count) {
   poly3i *poly;
-  int i, ii, texid, flags;
+  int i, ii, texid, flags, group_type, group_flags, group_texid;
 
   texid = -1;
   flags = 3;
@@ -234,7 +243,7 @@ void GLDrawPrims(void *data, int count) {
   glActiveTexture(GL_TEXTURE0);
   glDisable(GL_TEXTURE_2D);
   glEnable(GL_BLEND);
-  for (i=0;i<count;i++,poly++) {
+  for (i=0;i<count;) {
     if (poly->prim.type == 3)
       glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     else
@@ -268,13 +277,23 @@ void GLDrawPrims(void *data, int count) {
       }
       texid = poly->texid;
     }
+    group_type = poly->prim.type;
+    group_flags = poly->flags;
+    group_texid = poly->texid;
     glBegin(GL_TRIANGLES);
-    for (ii=0;ii<3;ii++) {
-      glColor3ui(poly->colors[ii].r, poly->colors[ii].g, poly->colors[ii].b);
-      if (poly->texid != -1)
-        glTexCoord2f(poly->uvs[ii].x, poly->uvs[ii].y);
-      glVertex3i(poly->verts[ii].x, poly->verts[ii].y, -1);
-    }
+    do {
+      for (ii=0;ii<3;ii++) {
+        glColor3ui(poly->colors[ii].r, poly->colors[ii].g, poly->colors[ii].b);
+        if (poly->texid != -1)
+          glTexCoord2f(poly->uvs[ii].x, poly->uvs[ii].y);
+        glVertex3i(poly->verts[ii].x, poly->verts[ii].y, -1);
+      }
+      i++;
+      poly++;
+    } while (i < count
+          && poly->prim.type == group_type
+          && poly->flags == group_flags
+          && poly->texid == group_texid);
     glEnd();
   }
   glDisable(GL_BLEND);
@@ -325,7 +344,6 @@ void GLAddPrim(void *prim, int idx) {
  *    b) perform a glDrawArrays call for each group
  * 2) manually generate tris instead of quads in sw gfx code
  */
-void *trimem=0;
 static void GLConvertToTris(void *ot, poly3i **tris, int *count) {
   prim_struct *prim;
   poly3i tri;
@@ -346,8 +364,15 @@ static void GLConvertToTris(void *ot, poly3i **tris, int *count) {
     else if (prim->type >= 2) { size += sizeof(poly3i)*2; }
     prim = (prim_struct*)PRIM_NEXT(prim);
   }
-  if (trimem==0)
-    trimem=calloc(1,0x800000);
+  if (size > trimem_capacity) {
+    void *new_trimem = realloc(trimem, size);
+    if (!new_trimem) {
+      *tris = 0;
+      return;
+    }
+    trimem = new_trimem;
+    trimem_capacity = size;
+  }
   *tris=trimem;
   prim = (prim_struct*)src;
   dst = (uint8_t*)*tris;

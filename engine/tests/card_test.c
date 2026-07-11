@@ -11,6 +11,7 @@ static int reset_count;
 void LevelResetGlobals(int flag) {
   if (flag) {
     ++reset_count;
+    life_count = init_life_count;
   }
 }
 
@@ -69,6 +70,7 @@ int main(void) {
   assert(levels_unlocked == 7);
   assert(cur_map_level == 7);
   assert(init_life_count == (4 << 8));
+  assert(life_count == (4 << 8));
   assert(dword_8006190C == 0x11223344);
   assert(mono == 1);
   assert(sfx_vol == 211);

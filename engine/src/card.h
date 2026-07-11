@@ -36,4 +36,11 @@ int CardControl(int op, int part_idx);
 /* Advance an in-progress rescan once per game frame. */
 void CardUpdate(void);
 
+/* Restore and maintain the browser's separate automatic resume snapshot. */
+int CardBrowserResumeLoad(void);
+void CardBrowserResumeBeforeTitleReset(void);
+void CardBrowserResumeAfterTitleReset(void);
+void CardBrowserResumeUpdate(void);
+int CardBrowserResumeFlush(void);
+
 #endif /* C1_CARD_H */

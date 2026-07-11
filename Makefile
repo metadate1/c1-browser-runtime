@@ -54,7 +54,8 @@ EMFLAGS := \
 	-sMIN_WEBGL_VERSION=1 \
 	-sMAX_WEBGL_VERSION=2 \
 	-sALLOW_MEMORY_GROWTH=0 \
-	-sINITIAL_MEMORY=268435456 \
+	-sINITIAL_MEMORY=134217728 \
+	-sABORTING_MALLOC=0 \
 	-sSTACK_SIZE=8388608 \
 	-sMODULARIZE=1 \
 	-sEXPORT_ES6=1 \
@@ -62,7 +63,7 @@ EMFLAGS := \
 	-sEXIT_RUNTIME=0 \
 	-sENVIRONMENT=web \
 	-sASSERTIONS=2 \
-	-sEXPORTED_FUNCTIONS=_main,_C1SetVirtualPad,_C1SetAudioPaused,_C1GetAudioCallbackCount,_C1GetAudioPeak,_C1CardControl,_C1GetCardPartCount,_C1GetCardFlags,_C1GetTitleState,_C1GetLoadedTitleState,_C1GetCurrentLid,_C1GetTitleTransitionState \
+	-sEXPORTED_FUNCTIONS=_main,_C1SetVirtualPad,_C1SetAudioPaused,_C1GetAudioCallbackCount,_C1GetAudioPeak,_C1GetAudioClipCount,_C1GetAudioDeadlineMissCount,_C1GetAudioMaxGapUs,_C1GetAudioMaxCallbackUs,_C1GetAudioMusicPeak,_C1GetAudioSfxPeak,_C1GetAudioMusicRms,_C1GetAudioSfxRms,_C1GetAudioActiveSfx,_C1GetSampleCacheHits,_C1GetSampleCacheMisses,_C1GetSampleCacheBytes,_C1GetTextureOwnedCount,_C1GetTextureOwnedBytes,_C1GetLastFrameUs,_C1GetMaxFrameUs,_C1GetHeapSize,_C1GetHeapAllocatedEnd,_C1CardControl,_C1GetCardPartCount,_C1GetCardFlags,_C1FlushBrowserResume,_C1GetBrowserResumeResult,_C1GetLevelCount,_C1GetKeyCount,_C1GetGemCount,_C1GetSfxVolume,_C1GetMusicVolume,_C1GetMono,_C1GetTitleState,_C1GetLoadedTitleState,_C1GetCurrentLid,_C1GetTitleTransitionState \
 	-sEXPORTED_RUNTIME_METHODS=FS,callMain
 
 .PHONY: all web clean serve setup

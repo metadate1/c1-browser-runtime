@@ -67,8 +67,8 @@ int AudioInit() {
   SwAudioInit();
   /* route midi audio to voice 0 */
   SwVoiceSetCallback(0, SwMidiProcess);
-  /* set gain to that of 8 simultaneously sounded voices */
-  SwVoiceSetGain(0, 8.0f);
+  /* TinySoundFont sums a full music bus; keep it below gameplay transients. */
+  SwVoiceSetGain(0, 1.5f);
   /* set inital values for master voice */
   master_voice.params.delay_counter = 1;
   master_voice.params.sustain_counter = 128u;
@@ -102,7 +102,7 @@ int AudioInit() {
   fade_vol_step = 0;
   seq2_vol = 0;
   /* finally set master volume */
-  SwSetMVol(127);
+  SwSetMVol(0x3FFF);
   return SUCCESS;
 }
 
@@ -279,7 +279,7 @@ int AudioVoiceCreate(gool_object *obj, eid_t *eid, int vol) {
   voice = &voices[idx]; /* get the allocated voice */
   adio = NSLookup(eid);
   size = adio->items[1]-adio->items[0];
-  SwLoadSample(idx, adio->items[0], size);
+  SwLoadSample(idx, *eid, adio->items[0], size);
   voice->params = voice_params;
   voice->params.amplitude = (vol*init_vol) >> 14;
   if (voice->params.flags & 0x40)
