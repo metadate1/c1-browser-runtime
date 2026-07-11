@@ -56,7 +56,11 @@ The engine runs in wasm32 because C1 stores many pointers and tagged references 
 
 ## Current compatibility truth
 
-The browser platform port can compile and run the inherited native engine, but C1 itself is not yet a perfect reimplementation. The best public fork still documents broken demo playback, non-map title states, a few level-specific crashes, camera/texture differences, and no implemented PC memory-card backend. Those are engine-completion tasks rather than WebAssembly blockers.
+The browser port is operational, but C1 is still an incomplete reimplementation of the retail executable. Current browser smoke tests cover full-disc import (88 streams / 44 level pairs), publisher screens, the main menu, password/load/options states, direct level boot, keyboard input, audio, and returning between menus. The options screen renders all four entries and its volume, mono/stereo, and exit controls work.
+
+Browser saves use a 15-slot virtual memory card stored under the versioned `c1.virtual-memory-card.v1` localStorage key. The engine preserves the retail 128-byte payload and card-state handshake. Save, load, rescan, and format behavior have native unit coverage, and the browser backend rejects or marks malformed slot records. Clearing site data also clears these saves.
+
+This is not yet a claim of retail parity. A complete playthrough has not certified every level, boss, bonus room, death/checkpoint path, demo, ending, or long sequence of level transitions. Inherited camera, texture-cache, audio-mixing, and level-specific behavior can still differ from the PlayStation release.
 
 “Fully functional” for this project means all of the following, which remain the continuing acceptance criteria:
 
@@ -67,8 +71,8 @@ The browser platform port can compile and run the inherited native engine, but C
 5. Save/password state persists in browser storage.
 6. A clean end-to-end playthrough passes against original-game reference captures.
 
-See `engine/doc/issues.md` for inherited known defects. The practical next phase is to fix those one by one using the legally owned disc image and original game behavior as the oracle.
+[`engine/doc/issues.md`](engine/doc/issues.md) is the historical upstream issue list, not a statement that every item still reproduces. Remaining parity work should be validated against the legally owned disc and original-game behavior, with regressions recorded as reproducible cases.
 
 ## Legal boundary
 
-Game assets remain user-supplied and local. The C1 repositories do not provide an express root license, so public distribution of this derivative needs permission from the relevant contributors as well as appropriate review for original-game rights. See `NOTICE.md` and `engine/UPSTREAM.md`.
+Game assets remain user-supplied and local. The C1 repositories do not provide an express root license, so this repository must remain private unless distribution permission is resolved with the relevant contributors and the original-game rights are reviewed. See `NOTICE.md` and `engine/UPSTREAM.md`.

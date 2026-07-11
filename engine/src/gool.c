@@ -593,10 +593,11 @@ gool_object *GoolObjectSpawn(entry *zone, int entity_idx) {
     entity = (zone_entity*)zone->items[2+entity_idx];
   else
     entity = (zone_entity*)zone->items[entity_idx];
+  /* Type 0x30 menus contain sibling entries; only subtype 0 owns main_obj. */
   is_main = entity->group == 3 && (entity->type == 0
              || (entity->id > 0 && entity->id < 5)
              || (entity->type == 0x2C && entity->subtype == 0)
-             || entity->type == 0x30);
+             || (entity->type == 0x30 && entity->subtype == 0));
   // if (!is_main) { return ERROR; }
   if (is_main && main_obj) /* trying to spawn the main obj (crash, etc.) but already spawned? */
     return (gool_object*)CODE_ERROR; /* return error */
@@ -634,26 +635,6 @@ gool_object *GoolObjectSpawn(entry *zone, int entity_idx) {
   GoolObjectAddChild((gool_object*)handle, obj);
   obj->handle.subtype = entity->group;
   res = GoolObjectInit(obj, entity->type, entity->subtype, 0, 0);
-#ifdef C1_BROWSER
-  {
-    static int c1_spawn_trace_count;
-    if (c1_spawn_trace_count++ < 128) {
-      gool_header *trace_header = !ISERRORCODE(res) && obj->global
-        ? (gool_header*)obj->global->items[0] : 0;
-      fprintf(stderr,
-        "C1_SPAWN zone=%08x entity=%d id=%u group=%u exec=%u subtype=%u "
-        "main=%d result=%08x gool=%08x category=%x state=%u pc=%u\n",
-        zone->eid, entity_idx, (unsigned int)entity->id,
-        (unsigned int)entity->group, (unsigned int)entity->type,
-        (unsigned int)entity->subtype, is_main, (unsigned int)res,
-        obj->global && !ISERRORCODE(obj->global) ? obj->global->eid : 0,
-        trace_header ? (unsigned int)trace_header->category : 0,
-        (unsigned int)obj->state,
-        (unsigned int)(obj->process.pc && obj->global
-          ? obj->process.pc - (uint32_t*)obj->global->items[1] : 0));
-    }
-  }
-#endif
   if (ISERRORCODE(res)) { GoolObjectAddChild((gool_object*)&free_objects, obj); }
   spawns[id] |= 1; /* set 'spawned' bit */
   obj->process.pid_flags = id << 8; /* TODO: make bitfield in struct */
@@ -708,7 +689,6 @@ gool_object *GoolObjectCreate(void *parent, int exec, int subtype, int argc, uin
   gool_object *_parent, *child;
   entry *zone;
   zone_header *header;
-  int init_res;
 
   _parent = (gool_object*)parent;
   if (!exec && !subtype) {
@@ -722,27 +702,7 @@ gool_object *GoolObjectCreate(void *parent, int exec, int subtype, int argc, uin
   }
   GoolObjectAddChild(_parent, child);
   child->handle.subtype = 3;
-  init_res = GoolObjectInit(child, exec, subtype, argc, argv);
-#ifdef C1_BROWSER
-  {
-    static int c1_create_trace_count;
-    if (c1_create_trace_count++ < 256) {
-      gool_header *trace_header = !ISERRORCODE(init_res) && child->global
-        ? (gool_header*)child->global->items[0] : 0;
-      fprintf(stderr,
-        "C1_CREATE parent=%08x exec=%d subtype=%d argc=%d flag=%d "
-        "result=%08x gool=%08x category=%x state=%u pc=%u\n",
-        _parent && _parent->handle.type == 1 && _parent->global
-          ? _parent->global->eid : 0,
-        exec, subtype, argc, flag, (unsigned int)init_res,
-        child->global && !ISERRORCODE(child->global) ? child->global->eid : 0,
-        trace_header ? (unsigned int)trace_header->category : 0,
-        (unsigned int)child->state,
-        (unsigned int)(child->process.pc && child->global
-          ? child->process.pc - (uint32_t*)child->global->items[1] : 0));
-    }
-  }
-#endif
+  GoolObjectInit(child, exec, subtype, argc, argv);
   zone = child->zone ? child->zone : cur_zone;
   header = (zone_header*)zone->items[0];
   child->colors = child == crash ? header->gfx.player_colors :
@@ -3162,21 +3122,6 @@ static inline void GoolOpSpawnChildren(gool_object *obj, uint32_t instruction, u
   type = (instruction >> 12) & 0xFF;
   subtype = (instruction >> 6) & 0x3F;
   spawn_count = (instruction & 0x3F);
-#ifdef C1_BROWSER
-  {
-    static int c1_child_op_trace_count;
-    if (c1_child_op_trace_count++ < 256) {
-      fprintf(stderr,
-        "C1_CHILD_OP gool=%08x opcode=%02x instruction=%08x type=%u "
-        "subtype=%u argc=%d count=%d state=%u pc=%u\n",
-        obj->global ? obj->global->eid : 0, opcode, instruction,
-        (unsigned int)type, (unsigned int)subtype, argc, spawn_count,
-        (unsigned int)obj->state,
-        (unsigned int)(obj->process.pc && obj->global
-          ? obj->process.pc - (uint32_t*)obj->global->items[1] : 0));
-    }
-  }
-#endif
   if (!spawn_count)
     spawn_count = obj->process.sp[--argc]; /* is this correct? */
   if (spawn_count > 0) {

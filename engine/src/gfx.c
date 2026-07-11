@@ -702,25 +702,26 @@ extern entry *cur_zone;
 int TgeoOnLoad(entry *tgeo) {
   tgeo_header *header;
   tgeo_texinfo *info;
-  uint8_t *info_p;
   uint32_t i;
 
   header = (tgeo_header*)tgeo->items[0];
-  info_p = (uint8_t*)header->texinfos;
+  /* The on-disc count is measured in 32-bit words, not texinfo records. */
   if (cur_lid != LID_TITLE && cur_lid != LID_INTRO) {
-    for (i = 0; i < header->texinfo_count; i++) {
-      info = (tgeo_texinfo*)info_p;
+    for (i = 0; i < header->texinfo_count;) {
+      info = (tgeo_texinfo*)&((uint32_t*)header->texinfos)[i];
       if (info->colinfo.type == 1 && (info->tpage & 1))
         info->tpage = (uint32_t)NSProbe(info->tpage); /* TODO: union? */
-      info_p += info->colinfo.type == 1 ? sizeof(tgeo_texinfo) : sizeof(tgeo_colinfo);
+      i += info->colinfo.type == 1 ? sizeof(tgeo_texinfo) / sizeof(uint32_t)
+                                  : sizeof(tgeo_colinfo) / sizeof(uint32_t);
     }
   }
   else {
-    for (i = 0; i < header->texinfo_count; i++) {
-      info = (tgeo_texinfo*)info_p;
+    for (i = 0; i < header->texinfo_count;) {
+      info = (tgeo_texinfo*)&((uint32_t*)header->texinfos)[i];
       if (info->colinfo.type == 1 && (info->tpage & 1))
         NSOpen(&info->tpage, 0, 1); /* TODO: union? */
-      info_p += info->colinfo.type == 1 ? sizeof(tgeo_texinfo) : sizeof(tgeo_colinfo);
+      i += info->colinfo.type == 1 ? sizeof(tgeo_texinfo) / sizeof(uint32_t)
+                                  : sizeof(tgeo_colinfo) / sizeof(uint32_t);
     }
   }
   return SUCCESS;

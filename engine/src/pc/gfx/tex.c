@@ -341,36 +341,6 @@ static int TextureNew(texinfo *texinfo, fvec (*uvs)[4]) {
   clut.y = texinfo->rgninfo.clut_y;
   tpage = TexturePage((entry_ref*)&texinfo->tpage);
   if (tpage == 0) { return -1; }
-#ifdef C1_BROWSER
-  if (tpage->eid == 0x04A65A28 &&
-      texinfo->rgninfo.color_mode == 1 &&
-      (clut.y == 3 || clut.y == 4)) {
-    static int c1_panel_dump_count;
-    if (c1_panel_dump_count++ < 96) {
-      dim2 debug_dim = rect.dim;
-      pnt2 debug_zero = { 0, 0 };
-      size_t debug_count = (size_t)debug_dim.w * debug_dim.h;
-      uint32_t *debug_pixels = malloc(debug_count * sizeof(*debug_pixels));
-      if (debug_pixels) {
-        char debug_name[96];
-        FILE *debug_file;
-        TextureCopy((uint8_t*)tpage, (uint8_t*)debug_pixels, 0, &debug_dim,
-          &rect, &debug_zero, &clut, 1, texinfo->rgninfo.color_mode,
-          texinfo->colinfo.semi_trans);
-        snprintf(debug_name, sizeof(debug_name),
-          "/c1-panel-c%d-x%d-y%d-w%d-h%d-u%u.rgba",
-          clut.y, rect.x, rect.y, rect.w, rect.h,
-          (unsigned int)texinfo->rgninfo.uv_idx);
-        debug_file = fopen(debug_name, "wb");
-        if (debug_file) {
-          fwrite(debug_pixels, sizeof(*debug_pixels), debug_count, debug_file);
-          fclose(debug_file);
-        }
-        free(debug_pixels);
-      }
-    }
-  }
-#endif
   atlas = TextureAtlas(tpage, texinfo->rgninfo.color_mode, texinfo->colinfo.semi_trans);
   for (i=0;i<4;i++) {
     (*uvs)[i].x /= atlas->rect.w;

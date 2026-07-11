@@ -74,7 +74,7 @@ function setRuntimeState(state, label) {
 function appendLog(message, kind = "out") {
   const line = `${kind === "err" ? "!" : ">"} ${String(message)}`;
   logLines.push(line);
-  if (logLines.length > 2000) logLines.splice(1, logLines.length - 2000);
+  if (logLines.length > 90) logLines.splice(1, logLines.length - 90);
   runtimeLog.textContent = logLines.join("\n");
   runtimeLog.scrollTop = runtimeLog.scrollHeight;
 }

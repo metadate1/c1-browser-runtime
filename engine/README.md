@@ -1,5 +1,11 @@
 # C1 #
 
+> **Historical upstream documentation.** This file is retained with the imported
+> engine sources and describes the earlier native desktop fork. Its status,
+> build, boot-target, and control notes are not authoritative for this browser
+> workspace. See the [workspace README](../README.md) for current setup,
+> controls, storage support, and verified compatibility.
+
 This is a port of the game *Crash Bandicoot* to C.
 
 ## Status ##

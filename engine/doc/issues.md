@@ -1,5 +1,12 @@
 # Issues
 
+> **Historical upstream list.** These reports were inherited with the native C1
+> engine and have not all been reconfirmed against the browser runtime. Some
+> title, menu, demo, rendering, and storage paths have since received fixes.
+> Treat each entry below as an investigation lead, not a currently reproduced
+> defect. See the [workspace README](../../README.md) for current verification
+> status and remaining acceptance criteria.
+
 ## General
 
 - colors are slightly different from psx (map differently?)

@@ -680,9 +680,6 @@ static void SwTransformAndShadeWorlds(
   int32_t z_sum;
   int texid, z_idx, min_z_idx, offs;
   int i, ii, world_idx, poly_idx, info_idx;
-#ifdef C1_BROWSER
-  static int c1_options_world_logged;
-#endif
 
   worlds = params->worlds;
   poly_ids = poly_id_list->ids;
@@ -740,36 +737,6 @@ static void SwTransformAndShadeWorlds(
        texid = TextureLoad(&info, &uvs);
     }
     else { texid = -1; }
-#ifdef C1_BROWSER
-    if (!c1_options_world_logged && cur_zone && cur_zone->eid == 0x007FCCFB) {
-      int min_x = min(min(r_verts[0].x, r_verts[1].x), r_verts[2].x);
-      int max_x = max(max(r_verts[0].x, r_verts[1].x), r_verts[2].x);
-      int min_y = min(min(r_verts[0].y, r_verts[1].y), r_verts[2].y);
-      int max_y = max(max(r_verts[0].y, r_verts[1].y), r_verts[2].y);
-      if (info.colinfo.type == 1 && max_x >= -120 && min_x <= 120 &&
-          max_y >= -90 && min_y <= 90) {
-        fprintf(stderr,
-          "C1_WORLD world=%d poly=%d box=%d,%d,%d,%d texid=%d type=%u "
-          "tpag=%08x info=%d uv=%u mode=%u seg=%u offs=%u,%u clut=%u,%u "
-          "anim=%u/%u/%u colors=%u,%u,%u;%u,%u,%u;%u,%u,%u\n",
-          world_idx, poly_idx, min_x, min_y, max_x, max_y, texid,
-          (unsigned int)info.colinfo.type, (unsigned int)tpag, info_idx,
-          (unsigned int)info.rgninfo.uv_idx,
-          (unsigned int)info.rgninfo.color_mode,
-          (unsigned int)info.rgninfo.segment,
-          (unsigned int)info.rgninfo.offs_x,
-          (unsigned int)info.rgninfo.offs_y,
-          (unsigned int)info.colinfo.clut_x,
-          (unsigned int)info.rgninfo.clut_y,
-          (unsigned int)poly->anim_mask,
-          (unsigned int)poly->anim_period,
-          (unsigned int)poly->anim_phase,
-          colors[0].r, colors[0].g, colors[0].b,
-          colors[1].r, colors[1].g, colors[1].b,
-          colors[2].r, colors[2].g, colors[2].b);
-      }
-    }
-#endif
     prim = (poly3i*)*prims_tail;
     for (ii=0;ii<3;ii++) {
       prim->verts[ii] = r_verts[ii];
@@ -791,10 +758,6 @@ static void SwTransformAndShadeWorlds(
     ((poly3i**)ot)[z_idx] = prim;
     *prims_tail += sizeof(poly3i);
   }
-#ifdef C1_BROWSER
-  if (cur_zone && cur_zone->eid == 0x007FCCFB)
-    c1_options_world_logged = 1;
-#endif
 }
 
 static void SwFogShader(vert_id vert_id, vec *vert, rgb8 *color, sw_transform_struct *params) {
