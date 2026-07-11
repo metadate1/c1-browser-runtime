@@ -1,0 +1,13 @@
+# compile output
+*.o
+c1
+
+# user files
+streams/*
+!streams/README.md
+imgui.ini
+!README.MD
+
+.vs
+Debug/
+Release/

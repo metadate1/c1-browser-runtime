@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#17130f" />
+    <meta
+      name="description"
+      content="A local, user-data-driven browser runtime for the C1 Crash Bandicoot source port."
+    />
+    <title>C1 // Browser Runtime</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="noise" aria-hidden="true"></div>
+    <div class="shell" data-runtime-state="idle">
+      <header class="masthead">
+        <a class="wordmark" href="#top" aria-label="C1 browser runtime home">
+          <span class="wordmark-mark">C1</span>
+          <span class="wordmark-copy">
+            <strong>Browser Runtime</strong>
+            <small>wasm32 · source-port lab</small>
+          </span>
+        </a>
+        <div class="runtime-indicator" role="status" aria-live="polite">
+          <span class="runtime-light"></span>
+          <span id="runtimeStatus">Waiting for game data</span>
+        </div>
+      </header>
+
+      <main id="top" class="workspace">
+        <section class="play-column" aria-label="Game display">
+          <div class="screen-frame">
+            <div class="screen-toolbar">
+              <span>NTSC-U · 30 FPS · WEBASSEMBLY</span>
+              <div class="toolbar-actions">
+                <button id="muteButton" class="icon-button" type="button" aria-pressed="false" disabled>
+                  Sound on
+                </button>
+                <button id="fullscreenButton" class="icon-button" type="button" disabled>
+                  Fullscreen
+                </button>
+              </div>
+            </div>
+            <div id="screen" class="screen">
+              <canvas id="canvas" width="1024" height="768" tabindex="0" aria-label="C1 game canvas"></canvas>
+              <div id="screenStandby" class="screen-standby">
+                <div class="standby-orbit" aria-hidden="true">
+                  <i></i><i></i><i></i>
+                </div>
+                <p class="eyebrow">Runtime cold</p>
+                <h2>Load your original disc files to wake the engine.</h2>
+                <p>The game data stays in this browser tab and is never bundled with the port.</p>
+              </div>
+              <div class="scanlines" aria-hidden="true"></div>
+            </div>
+          </div>
+
+          <div class="touch-controls" aria-label="Touch game controls">
+            <div class="shoulder-controls" aria-label="Shoulder buttons">
+              <button class="pad-button shoulder" data-pad-bit="1" aria-label="L2">L2</button>
+              <button class="pad-button shoulder" data-pad-bit="4" aria-label="L1">L1</button>
+              <i aria-hidden="true"></i>
+              <button class="pad-button shoulder" data-pad-bit="8" aria-label="R1">R1</button>
+              <button class="pad-button shoulder" data-pad-bit="2" aria-label="R2">R2</button>
+            </div>
+            <div class="dpad" aria-label="Directional pad">
+              <button class="pad-button up" data-pad-bit="4096" aria-label="Up">↑</button>
+              <button class="pad-button left" data-pad-bit="32768" aria-label="Left">←</button>
+              <button class="pad-button right" data-pad-bit="8192" aria-label="Right">→</button>
+              <button class="pad-button down" data-pad-bit="16384" aria-label="Down">↓</button>
+            </div>
+            <div class="center-controls">
+              <button class="pad-button meta" data-pad-bit="256">Select</button>
+              <button class="pad-button meta" data-pad-bit="2048">Start</button>
+            </div>
+            <div class="face-buttons" aria-label="Face buttons">
+              <button class="pad-button triangle" data-pad-bit="16" aria-label="Triangle">△</button>
+              <button class="pad-button square" data-pad-bit="128" aria-label="Square">□</button>
+              <button class="pad-button circle" data-pad-bit="32" aria-label="Circle">○</button>
+              <button class="pad-button cross" data-pad-bit="64" aria-label="Cross">×</button>
+            </div>
+          </div>
+
+          <div class="quick-reference">
+            <span><kbd>Arrows</kbd> Move</span>
+            <span><kbd>Z</kbd> Jump</span>
+            <span><kbd>X</kbd> Spin</span>
+            <span><kbd>Enter</kbd> Start</span>
+            <span>Standard gamepads supported</span>
+          </div>
+        </section>
+
+        <aside class="boot-panel" aria-labelledby="bootTitle">
+          <div class="panel-index" aria-hidden="true">01 / BOOT</div>
+          <p class="eyebrow">Local game-data import</p>
+          <h1 id="bootTitle">Bring the disc.<br />We’ll bring the runtime.</h1>
+          <p class="lede">
+            Select a raw <code>.BIN</code> image of your legally owned NTSC-U disc, or its extracted
+            <code>.NSD</code>/<code>.NSF</code> files. Disc parsing happens entirely in this tab.
+          </p>
+
+          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-describedby="dropHelp">
+            <div class="dropzone-glyph" aria-hidden="true">↘</div>
+            <div>
+              <strong>Drop BIN or S0–S3 here</strong>
+              <span id="dropHelp">or choose your disc-data folder</span>
+            </div>
+            <button id="chooseFolderButton" class="secondary-button" type="button">Choose folder</button>
+            <input id="folderInput" type="file" webkitdirectory multiple hidden />
+            <input id="fileInput" type="file" accept=".bin,.iso,.nsd,.nsf" multiple hidden />
+          </div>
+
+          <div class="asset-readout" aria-live="polite">
+            <div>
+              <span class="readout-label">Recognized</span>
+              <strong id="recognizedFiles">0 files</strong>
+            </div>
+            <div>
+              <span class="readout-label">Complete pairs</span>
+              <strong><span id="pairCount">0</span> / <span id="requiredCount">44</span></strong>
+            </div>
+            <div>
+              <span class="readout-label">In-memory size</span>
+              <strong id="assetSize">0 B</strong>
+            </div>
+          </div>
+
+          <p id="assetMessage" class="asset-message">No game files selected yet.</p>
+
+          <label class="field-label" for="bootLevel">Boot target</label>
+          <select id="bootLevel" disabled>
+            <option>Select game data first</option>
+          </select>
+
+          <div id="loadProgress" class="load-progress" hidden>
+            <div class="progress-track"><i id="progressBar"></i></div>
+            <span id="progressLabel">Preparing runtime…</span>
+          </div>
+
+          <div class="boot-actions">
+            <button id="launchButton" class="launch-button" type="button" disabled>
+              <span>Launch native build</span>
+              <b aria-hidden="true">→</b>
+            </button>
+            <button id="clearButton" class="text-button" type="button" disabled>Clear files</button>
+          </div>
+
+          <div class="privacy-note">
+            <span aria-hidden="true">◉</span>
+            <p><strong>Private by design.</strong> Files are copied into an in-memory filesystem in this tab. Nothing is uploaded.</p>
+          </div>
+
+          <details class="diagnostics">
+            <summary>Runtime log</summary>
+            <pre id="runtimeLog" aria-live="polite">C1 loader ready.</pre>
+          </details>
+        </aside>
+      </main>
+
+      <footer class="footer">
+        <p>Engine lineage: wurlyfox/c1 → mateusfavarin/c1 · Browser platform layer in this workspace.</p>
+        <p>Unofficial fan engineering project. No game assets are included.</p>
+      </footer>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
