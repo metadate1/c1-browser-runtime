@@ -5,7 +5,12 @@ import {
 } from "/dist/runtime-lifecycle.js";
 
 const q = new URLSearchParams(location.search);
-const lid = Number(q.get("lid") || 9);
+const scenarioName = q.get("scenario") || "";
+const scenarioLids = {
+  "title-attract-intro": 0x19,
+  "level-complete": 0x09,
+};
+const lid = Number(q.get("lid") || scenarioLids[scenarioName] || 9);
 const canvas = document.querySelector("#canvas");
 const result = document.querySelector("#result");
 const metrics = document.querySelector("#metrics");
@@ -27,6 +32,11 @@ const lifecycle = {
   firstFrameUs: null,
   lid,
   streamCount: 0,
+  scenario: scenarioName || null,
+  scenarioPhase: scenarioName ? "boot" : null,
+  scenarioStorageReset: false,
+  scenarioRoute: [],
+  scenarioEvidence: {},
 };
 let module;
 let runtimeFrameGate = "idle";
@@ -38,10 +48,23 @@ let maxFrameMissingPages = 0;
 let maxFrameGenerationMisses = 0;
 let maxFrameCacheFailures = 0;
 let maxFrameUploadBytes = 0;
+let maxTextureTotalFailures = 0;
+let maxGlErrors = 0;
+let maxPrimitiveOverflows = 0;
 let worstFailureFrame = null;
+let scenarioStartedAt = 0;
+let scenarioLastRouteKey = "";
+let scenarioPadHeld = false;
+const scenarioSkippedTitleStates = new Set();
+const scenarioIntroCameras = new Set();
 
 window.__c1HarnessResult = lifecycle;
-window.__c1HarnessSnapshot = () => ({ ...lifecycle, globalErrors: [...lifecycle.globalErrors] });
+window.__c1HarnessSnapshot = () => ({
+  ...lifecycle,
+  globalErrors: [...lifecycle.globalErrors],
+  scenarioRoute: lifecycle.scenarioRoute.map((step) => ({ ...step })),
+  scenarioEvidence: { ...lifecycle.scenarioEvidence },
+});
 
 function oneLine(value) {
   return String(value ?? "Unknown failure").replace(/\s+/g, " ").trim();
@@ -66,14 +89,20 @@ function renderMetrics() {
     harnessTelemetrySamples: lifecycle.telemetrySamples,
     harnessFrameSamples: lifecycle.frameSamples,
     harnessFirstFrameUs: lifecycle.firstFrameUs,
+    harnessScenario: lifecycle.scenario,
+    harnessScenarioPhase: lifecycle.scenarioPhase,
+    harnessScenarioStorageReset: lifecycle.scenarioStorageReset,
+    harnessScenarioRoute: lifecycle.scenarioRoute,
+    harnessScenarioEvidence: lifecycle.scenarioEvidence,
     ...lastTelemetry,
   });
 }
 
 function renderResult() {
   result.dataset.status = lifecycle.status;
+  const scenarioLabel = lifecycle.scenario ? ` scenario=${lifecycle.scenario}` : "";
   if (lifecycle.status === "pass") {
-    result.textContent = `HARNESS PASS lid=${lid} streams=${lifecycle.streamCount} mainStatus=${lifecycle.mainStatus}`;
+    result.textContent = `HARNESS PASS${scenarioLabel} lid=${lid} streams=${lifecycle.streamCount} mainStatus=${lifecycle.mainStatus}`;
   } else if (lifecycle.status === "fail") {
     result.textContent = `HARNESS FAIL phase=${lifecycle.failurePhase} reason=${lifecycle.failure}`;
   } else if (lifecycle.status === "running") {
@@ -105,12 +134,205 @@ function markFailure(reason, phase = lifecycle.phase) {
   renderResult();
 }
 
-function markPass() {
+function markPass(phase = "runtime") {
   if (lifecycle.status === "fail" || runtimeFrameGate !== "pass") return;
   lifecycle.status = "pass";
-  lifecycle.phase = "runtime";
-  appendLine(`HARNESS PASS lid=${lid} streams=${lifecycle.streamCount}`);
+  lifecycle.phase = phase;
+  lifecycle.scenarioPhase = lifecycle.scenario ? "complete" : lifecycle.scenarioPhase;
+  appendLine(`HARNESS PASS${lifecycle.scenario ? ` scenario=${lifecycle.scenario}` : ""} lid=${lid} streams=${lifecycle.streamCount}`);
   renderResult();
+}
+
+function setScenarioPhase(phase) {
+  if (!lifecycle.scenario || lifecycle.status === "fail") return;
+  lifecycle.scenarioPhase = phase;
+  lifecycle.phase = `scenario:${phase}`;
+  lifecycle.status = "running";
+  renderResult();
+}
+
+function pulseScenarioPad(bit) {
+  if (scenarioPadHeld || !module) return false;
+  scenarioPadHeld = true;
+  module._C1SetVirtualPad(bit);
+  setTimeout(() => {
+    module?._C1SetVirtualPad(0);
+    scenarioPadHeld = false;
+  }, 120);
+  return true;
+}
+
+function recordScenarioRoute(telemetry) {
+  if (!lifecycle.scenario) return;
+  const key = `${telemetry.lid}:${telemetry.loadedTitleState}:${telemetry.titleTransition}`;
+  if (key === scenarioLastRouteKey) return;
+  scenarioLastRouteKey = key;
+  lifecycle.scenarioRoute.push({
+    atMs: Date.now() - scenarioStartedAt,
+    lid: telemetry.lid,
+    titleState: telemetry.titleState,
+    loadedTitleState: telemetry.loadedTitleState,
+    titleTransition: telemetry.titleTransition,
+  });
+  if (lifecycle.scenarioRoute.length > 64) lifecycle.scenarioRoute.shift();
+}
+
+function runtimeDiagnosticFailure() {
+  if (maxFrameFailures) return `texture failures reached ${maxFrameFailures}`;
+  if (maxFrameMissingPages) return `missing texture pages reached ${maxFrameMissingPages}`;
+  if (maxFrameCacheFailures) return `texture cache failures reached ${maxFrameCacheFailures}`;
+  if (maxTextureTotalFailures) return `total texture failures reached ${maxTextureTotalFailures}`;
+  if (maxGlErrors) return `GL errors reached ${maxGlErrors}`;
+  if (maxPrimitiveOverflows) return `primitive overflows reached ${maxPrimitiveOverflows}`;
+  return null;
+}
+
+function finishScenarioPass() {
+  const diagnostic = runtimeDiagnosticFailure();
+  if (diagnostic) {
+    markFailure(diagnostic, `scenario:${lifecycle.scenarioPhase}`);
+    return;
+  }
+  markPass("scenario:complete");
+}
+
+function runTitleAttractIntroScenario(telemetry) {
+  const elapsed = Date.now() - scenarioStartedAt;
+  const evidence = lifecycle.scenarioEvidence;
+  if (elapsed > 120000) {
+    markFailure(`timed out; route=${JSON.stringify(lifecycle.scenarioRoute)}`, "scenario:title-attract-intro");
+    return;
+  }
+
+  if (telemetry.lid === 0x19
+   && [10, 7, 8].includes(telemetry.loadedTitleState)
+   && telemetry.titleTransition === 3
+   && !scenarioSkippedTitleStates.has(telemetry.loadedTitleState)) {
+    scenarioSkippedTitleStates.add(telemetry.loadedTitleState);
+    pulseScenarioPad(0x40);
+    setScenarioPhase(`skip-title-${telemetry.loadedTitleState}`);
+    return;
+  }
+
+  if (!evidence.mainMenuReached
+   && telemetry.lid === 0x19
+   && telemetry.loadedTitleState === 5
+   && telemetry.titleTransition === 3) {
+    evidence.mainMenuReached = true;
+    evidence.mainMenuReachedAtMs = elapsed;
+    setScenarioPhase("await-idle-attract-intro");
+    return;
+  }
+
+  if (!evidence.sawIntro && telemetry.lid === 0x38) {
+    evidence.sawIntro = true;
+    evidence.introSamples = 0;
+    evidence.introTriangleSamples = 0;
+    setScenarioPhase("intro-rendering");
+  }
+
+  if (evidence.mainMenuReached && !evidence.sawIntro
+   && telemetry.lid === 0x19
+   && telemetry.loadedTitleState === 15) {
+    markFailure("idle title flow entered map state 15 before intro lid 56", "scenario:await-idle-attract-intro");
+    return;
+  }
+
+  if (evidence.sawIntro && telemetry.lid === 0x38) {
+    evidence.introSamples++;
+    if (telemetry.convertedTriangles > 0) evidence.introTriangleSamples++;
+    scenarioIntroCameras.add(telemetry.camera.join(","));
+    evidence.introDistinctCameras = scenarioIntroCameras.size;
+    if (evidence.introSamples >= 50
+     && evidence.introTriangleSamples >= 5
+     && evidence.introDistinctCameras >= 2
+     && (evidence.introSkipAttempts || 0) < 5
+     && (!evidence.lastIntroSkipAt || Date.now() - evidence.lastIntroSkipAt >= 2000)) {
+      if (pulseScenarioPad(0x40)) {
+        evidence.introSkipAttempts = (evidence.introSkipAttempts || 0) + 1;
+        evidence.lastIntroSkipAt = Date.now();
+        setScenarioPhase("await-title-after-intro");
+      }
+    }
+    return;
+  }
+
+  if (evidence.sawIntro
+   && telemetry.lid === 0x19
+   && telemetry.loadedTitleState !== -1
+   && telemetry.titleTransition === 3) {
+    if ((evidence.introTriangleSamples || 0) < 5 || (evidence.introDistinctCameras || 0) < 2) {
+      markFailure("intro transitioned without sustained rendered/camera evidence", "scenario:await-title-after-intro");
+      return;
+    }
+    finishScenarioPass();
+  }
+}
+
+function runLevelCompleteScenario(telemetry) {
+  const elapsed = Date.now() - scenarioStartedAt;
+  const evidence = lifecycle.scenarioEvidence;
+  if (elapsed > 45000) {
+    markFailure(`timed out; route=${JSON.stringify(lifecycle.scenarioRoute)}`, "scenario:level-complete");
+    return;
+  }
+
+  if (!evidence.entranceSkipSent
+   && telemetry.lid === 0x09
+   && telemetry.gameState === 0
+   && elapsed >= 1000) {
+    evidence.entranceSkipSent = pulseScenarioPad(0x40);
+    if (evidence.entranceSkipSent) setScenarioPhase("skip-level-entrance");
+    return;
+  }
+
+  if (telemetry.lid === 0x09 && telemetry.gameState === 0x100)
+    evidence.playingSamples = (evidence.playingSamples || 0) + 1;
+  else if (!evidence.completionEventAccepted)
+    evidence.playingSamples = 0;
+
+  if (!evidence.completionEventAccepted
+   && telemetry.lid === 0x09
+   && telemetry.gameState === 0x100
+   && evidence.playingSamples >= 10
+   && telemetry.convertedTriangles > 0
+   && (!evidence.lastAttemptAt || Date.now() - evidence.lastAttemptAt >= 500)) {
+    evidence.lastAttemptAt = Date.now();
+    evidence.completionEventAttempts = (evidence.completionEventAttempts || 0) + 1;
+    const eventResult = module._C1DebugCrashEvent(0x1600);
+    evidence.completionEventResult = eventResult;
+    if (eventResult !== 0) {
+      evidence.completionEventAccepted = true;
+      setScenarioPhase("await-level-complete");
+    }
+    return;
+  }
+
+  if (evidence.completionEventAccepted && telemetry.lid !== 0x09 && telemetry.lid !== 0x2d) {
+    markFailure(`completion event transitioned to unexpected lid ${telemetry.lid}`, "scenario:await-level-complete");
+    return;
+  }
+
+  if (telemetry.lid === 0x2d) {
+    if (!evidence.sawLevelComplete) {
+      evidence.sawLevelComplete = true;
+      evidence.levelCompleteSamples = 0;
+      evidence.levelCompleteRenderedSamples = 0;
+      setScenarioPhase("level-complete-rendering");
+    }
+    evidence.levelCompleteSamples++;
+    if (telemetry.convertedTriangles > 0 && telemetry.worldPrimitives > 0)
+      evidence.levelCompleteRenderedSamples++;
+    if (evidence.levelCompleteSamples >= 10 && evidence.levelCompleteRenderedSamples >= 5)
+      finishScenarioPass();
+  }
+}
+
+function runScenario(telemetry) {
+  if (!lifecycle.scenario || lifecycle.status === "fail" || lifecycle.status === "pass") return;
+  recordScenarioRoute(telemetry);
+  if (lifecycle.scenario === "title-attract-intro") runTitleAttractIntroScenario(telemetry);
+  else if (lifecycle.scenario === "level-complete") runLevelCompleteScenario(telemetry);
 }
 
 function recordGlobalFailure(kind, value) {
@@ -128,12 +350,19 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 renderResult();
+if (scenarioName && !Object.hasOwn(scenarioLids, scenarioName))
+  markFailure(`unknown scenario ${scenarioName}`, "scenario");
 
 startButton.addEventListener("click", async (event) => {
   if (lifecycle.status === "fail") return;
   event.currentTarget.disabled = true;
   setPhase("module");
   try {
+    if (scenarioName) {
+      localStorage.removeItem("c1.virtual-memory-card.v1");
+      localStorage.removeItem("c1.browser-resume.v1");
+      lifecycle.scenarioStorageReset = true;
+    }
     const { default: createC1Module } = await import("/dist/c1.mjs");
     const preservedWebGLContext = canvas.getContext("webgl", {
       alpha: false,
@@ -183,6 +412,10 @@ startButton.addEventListener("click", async (event) => {
     if (lifecycle.abortReason || lifecycle.globalErrors.length || lifecycle.status === "fail") return;
     runtimeFrameGate = advanceRuntimeFrameGate(runtimeFrameGate, "main-ready");
     setPhase("awaiting-frame");
+    if (scenarioName) {
+      scenarioStartedAt = Date.now();
+      setScenarioPhase("awaiting-first-frame");
+    }
     canvas.focus();
   } catch (error) {
     markFailure(error?.message || error);
@@ -244,6 +477,9 @@ setInterval(() => {
     maxFrameGenerationMisses = Math.max(maxFrameGenerationMisses, frameGenerationMisses);
     maxFrameCacheFailures = Math.max(maxFrameCacheFailures, frameCacheFailures);
     maxFrameUploadBytes = Math.max(maxFrameUploadBytes, frameUploadBytes);
+    maxTextureTotalFailures = Math.max(maxTextureTotalFailures, module._C1GetTextureTotalFailures());
+    maxGlErrors = Math.max(maxGlErrors, module._C1GetGlErrorCount());
+    maxPrimitiveOverflows = Math.max(maxPrimitiveOverflows, module._C1GetPrimitiveOverflowCount());
     const frameUs = module._C1GetLastFrameUs();
     lastTelemetry = {
       lid: module._C1GetCurrentLid(),
@@ -317,6 +553,9 @@ setInterval(() => {
       maxFrameMissingPages,
       maxFrameGenerationMisses,
       maxFrameCacheFailures,
+      maxTextureTotalFailures,
+      maxGlErrors,
+      maxPrimitiveOverflows,
       worstFailureFrame,
       frameUs,
       maxFrameUs: module._C1GetMaxFrameUs(),
@@ -330,11 +569,15 @@ setInterval(() => {
       if (runtimeFrameGate === "awaiting-frame") {
         runtimeFrameGate = advanceRuntimeFrameGate(runtimeFrameGate, "frame-sample");
         buttons.forEach((button) => { button.disabled = false; });
-        markPass();
+        if (scenarioName) setScenarioPhase("running");
+        else markPass();
       }
+      runScenario(lastTelemetry);
     }
     renderMetrics();
   } catch (error) {
     markFailure(error?.message || error, "telemetry");
   }
 }, 100);
+
+if (scenarioName) queueMicrotask(() => startButton.click());

@@ -13,6 +13,7 @@
 #include "midi.h"
 #include "title.h"
 #include "card.h"
+#include "main_transition.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -278,11 +279,13 @@ void CoreObjectsCreate() {
 //----- (80011FC4) --------------------------------------------------------
 void CoreFrame(void) {
   lid_t lid;
+  lid_t requested_lid;
   int is_pause_lid, can_pause;
   zone_header *header;
   void *ot;
   uint32_t arg;
   int bonus_return2 = 0;
+  core_level_transition transition;
 
 #ifdef __EMSCRIPTEN__
   if (done) {
@@ -340,17 +343,14 @@ void CoreFrame(void) {
        || game_state == 0x400))
       next_lid = LID_TITLE;
     if (next_lid != -1) {
+      requested_lid = next_lid;
       GoolSendToColliders(0, GOOL_EVENT_LEVEL_END, 0, 0, 0);
-      if (next_lid == -2) {
-        lid = savestate.lid;
-        bonus_return = 1; /* i.e. loading nsf and there is a savestate to load */
-        bonus_return2 = 1; /* LdatInit clears bonus_return so we need a persistent variant */
-      }
-      else {
-        lid = next_lid;
-        bonus_return = 0;
-        bonus_return2 = 0;
-      }
+      transition = CoreResolveLevelTransition(
+        requested_lid, next_lid, savestate.lid);
+      lid = transition.lid;
+      bonus_return = transition.bonus_return;
+      /* LdatInit clears bonus_return, so retain a local copy through NSInit. */
+      bonus_return2 = transition.bonus_return;
       ns.draw_skip_counter = 2;
       NSKill(&ns);
       paused = 0;

@@ -56,7 +56,9 @@ The engine runs in wasm32 because C1 stores many pointers and tagged references 
 
 ## Current compatibility truth
 
-The browser port is operational, but C1 is still an incomplete reimplementation of the retail executable. Current browser smoke tests cover full-disc import (88 streams / 44 recognized pairs, with 43 playable boot targets), publisher screens, the main menu, password/load/options states, direct level boot, keyboard input, audio, and returning between menus. The options screen renders all four entries and its volume, mono/stereo, and exit controls work.
+The browser port is operational, but C1 is still an incomplete reimplementation of the retail executable. Current browser smoke tests cover full-disc import (88 streams / 44 recognized pairs, with 43 playable boot targets), publisher screens, the main menu, password/load/options states, direct level boot, keyboard input, audio, and returning between menus. Deterministic flow checks also cover the title's idle Intro sequence and N. Sanity Beach's transition into the missed-box Level Complete tally. The options screen renders all four entries and its volume, mono/stereo, and exit controls work.
+
+The Cortex laboratory Intro is the first title-screen attract sequence in the retail flow: leave the main menu idle for about 30 seconds to play it. Pressing Start promptly goes directly to the world map.
 
 Browser persistence has two separate records. The retail 15-slot virtual memory card remains under `c1.virtual-memory-card.v1`, preserving its 128-byte payload and card-state handshake. A checksummed automatic resume snapshot lives under `c1.browser-resume.v1`; it captures progression and options about once per second and when the page is hidden or closed, then restores before the title flow starts. Malformed resume data is quarantined instead of overwriting a valid manual card.
 

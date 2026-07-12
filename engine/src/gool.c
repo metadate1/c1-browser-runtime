@@ -1138,6 +1138,11 @@ int GoolObjectUpdate(gool_object *obj, int flag) {
       obj->process.status_a &= ~GOOL_FLAG_FIRST_FRAME; /* clear first frame flag */
     }
   }
+  /* The retail executable reloads status_b after running transition/code
+   * blocks.  Those blocks may make an object invisible in this same update;
+   * using the pre-update snapshot renders one stale frame (and can interpret
+   * timer-only animation data as a texture). */
+  status_b = obj->process.status_b;
   /* if object has no anim sequence, is not displayable (visible?), or global display flag is clear */
   if (!obj->process.anim_seq ||
       (status_b & GOOL_FLAG_INVISIBLE) ||

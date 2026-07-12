@@ -87,6 +87,8 @@ web:
 	"$(EMSDK_PYTHON)" "$(EMCC)" $(C1_SOURCES) $(CFLAGS) $(EMFLAGS) -o "$(DIST_DIR)/c1.mjs"
 
 test: test-tree
+	cc -std=gnu11 -Wall -Wextra -Iengine/src engine/tests/main_transition_test.c -o /tmp/c1-main-transition-test
+	/tmp/c1-main-transition-test
 	cc -std=gnu11 -Wall -Wextra -Iengine/src engine/tests/card_test.c engine/src/card.c -o /tmp/c1-card-test
 	/tmp/c1-card-test
 	cc -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -ffunction-sections -fdata-sections -Iengine/src engine/tests/ns_texture_lifecycle_test.c engine/src/ns.c $(DEAD_CODE_FLAGS) -o /tmp/c1-ns-texture-lifecycle-test
@@ -121,7 +123,7 @@ test-tree:
 
 clean:
 	rm -rf "$(DIST_DIR)"
-	rm -f /tmp/c1-card-test /tmp/c1-level-ref-test /tmp/c1-gool-null-gop-test \
+	rm -f /tmp/c1-main-transition-test /tmp/c1-card-test /tmp/c1-level-ref-test /tmp/c1-gool-null-gop-test \
 		/tmp/c1-ns-texture-lifecycle-test /tmp/c1-ns-metadata-test \
 		/tmp/c1-cam-death-test /tmp/c1-texture-cache-test /tmp/c1-frame-skip-test \
 		/tmp/c1-primitive-alpha-test \
