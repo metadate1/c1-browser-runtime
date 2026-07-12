@@ -79,6 +79,7 @@ static volatile uint32_t sample_cache_misses;
 #ifdef __EMSCRIPTEN__
 static double audio_last_callback_ms;
 static double audio_expected_callback_ms;
+static int audio_device_open;
 #endif
 
 #ifdef __EMSCRIPTEN__
@@ -349,6 +350,15 @@ void SwAudioInit() {
 #endif
   for (i=0;i<24;i++)
     svoices[i] = def_svoice;
+#ifdef __EMSCRIPTEN__
+  if (audio_device_open) {
+    /* Level changes happen inside one game frame. Keep the browser's
+     * AudioContext/device alive instead of destroying and recreating it for
+     * every NS transition; AudioKill has already paused and drained voices. */
+    SDL_PauseAudio(0);
+    return;
+  }
+#endif
   SDL_zero(spec);
   spec.freq = 44100;
   spec.callback = (SDL_AudioCallback)AudioCallback;
@@ -359,6 +369,9 @@ void SwAudioInit() {
     printf("Error initializing audio: %s\n", SDL_GetError());
     return;
   }
+#ifdef __EMSCRIPTEN__
+  audio_device_open = 1;
+#endif
   SDL_PauseAudio(0);
 }
 
@@ -370,7 +383,9 @@ void SwAudioKill() {
     SwUnloadSample(i);
   }
   SampleCacheClear();
+#ifndef __EMSCRIPTEN__
   SDL_CloseAudio();
+#endif
 }
 
 void SwSetMVol(int32_t vol) {
@@ -391,6 +406,8 @@ void SwLoadSample(int voice_idx, uint32_t eid, uint8_t *data, size_t size) {
   svoice = &svoices[voice_idx];
   sampler = &svoice->sampler;
   svoice->on = 0;
+  sampler->done = 0;
+  sampler->t = 0;
   if (sampler->sample)
     SwUnloadSample(voice_idx);
   cache_entry = SampleCacheFind(eid);
@@ -520,7 +537,10 @@ void SwGetAllKeysStatus(uint8_t *status) {
 
   for (i=0;i<24;i++) {
     svoice = &svoices[i];
-    status[i] = svoice->on;
+    if (svoice->sampler.done)
+      status[i] = SW_KEY_STATUS_ON_ENV_OFF;
+    else
+      status[i] = svoice->on ? SW_KEY_STATUS_ON : SW_KEY_STATUS_OFF;
   }
 }
 

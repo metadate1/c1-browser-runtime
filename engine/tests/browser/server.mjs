@@ -26,6 +26,7 @@ createServer(async (request, response) => {
     let path;
     if (pathname === "/") path = join(here, "harness.html");
     else if (pathname === "/harness.mjs") path = join(here, "harness.mjs");
+    else if (pathname === "/audio-regression.mjs") path = join(here, "audio-regression.mjs");
     else if (pathname === "/stream-manifest.json") {
       const names = (await readdir(streams)).filter((name) => /^s[0-9a-f]{7}\.(nsd|nsf)$/.test(name)).sort();
       response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });

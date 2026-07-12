@@ -3,6 +3,11 @@ import {
   callMainOnce,
   isEmscriptenUnwind,
 } from "/dist/runtime-lifecycle.js";
+import {
+  createIntroAudioRegressionState,
+  finishIntroAudioRegression,
+  sampleIntroAudioRegression,
+} from "/audio-regression.mjs";
 
 const q = new URLSearchParams(location.search);
 const scenarioName = q.get("scenario") || "";
@@ -228,6 +233,15 @@ function runTitleAttractIntroScenario(telemetry) {
     evidence.sawIntro = true;
     evidence.introSamples = 0;
     evidence.introTriangleSamples = 0;
+    evidence.introStartedAtMs = elapsed;
+    evidence.introAudio = createIntroAudioRegressionState({
+      atMs: 0,
+      delayedVoices: telemetry.delayedVoices,
+      audioCallbacks: telemetry.audioCallbacks,
+      audioMaxGapUs: telemetry.audioMaxGapUs,
+      activeSfx: telemetry.activeSfx,
+      visible: document.visibilityState === "visible",
+    });
     setScenarioPhase("intro-rendering");
   }
 
@@ -239,6 +253,19 @@ function runTitleAttractIntroScenario(telemetry) {
   }
 
   if (evidence.sawIntro && telemetry.lid === 0x38) {
+    const introAtMs = elapsed - evidence.introStartedAtMs;
+    const audioFailure = sampleIntroAudioRegression(evidence.introAudio, {
+      atMs: introAtMs,
+      delayedVoices: telemetry.delayedVoices,
+      audioCallbacks: telemetry.audioCallbacks,
+      audioMaxGapUs: telemetry.audioMaxGapUs,
+      activeSfx: telemetry.activeSfx,
+      visible: document.visibilityState === "visible",
+    });
+    if (audioFailure) {
+      markFailure(audioFailure, "scenario:intro-audio");
+      return;
+    }
     evidence.introSamples++;
     if (telemetry.convertedTriangles > 0) evidence.introTriangleSamples++;
     scenarioIntroCameras.add(telemetry.camera.join(","));
@@ -263,6 +290,11 @@ function runTitleAttractIntroScenario(telemetry) {
    && telemetry.titleTransition === 3) {
     if ((evidence.introTriangleSamples || 0) < 5 || (evidence.introDistinctCameras || 0) < 2) {
       markFailure("intro transitioned without sustained rendered/camera evidence", "scenario:await-title-after-intro");
+      return;
+    }
+    const audioFailure = finishIntroAudioRegression(evidence.introAudio);
+    if (audioFailure) {
+      markFailure(audioFailure, "scenario:intro-audio");
       return;
     }
     finishScenarioPass();
@@ -545,6 +577,7 @@ setInterval(() => {
       musicPeak: module._C1GetAudioMusicPeak(),
       sfxPeak: module._C1GetAudioSfxPeak(),
       activeSfx: module._C1GetAudioActiveSfx(),
+      delayedVoices: module._C1GetAudioDelayedVoiceCount?.() ?? null,
       sampleCacheHits: module._C1GetSampleCacheHits(),
       sampleCacheMisses: module._C1GetSampleCacheMisses(),
       sampleCacheBytes: module._C1GetSampleCacheBytes(),

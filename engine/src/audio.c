@@ -6,6 +6,10 @@
 #include "level.h"
 #include "pc/gfx/soft.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
+
 typedef struct {
   int left;
   int right;
@@ -54,6 +58,19 @@ extern int32_t fade_vol;
 extern int32_t fade_vol_step;
 extern int max_midi_voices;
 extern uint32_t seq2_vol;
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE int C1GetAudioDelayedVoiceCount(void) {
+  int count = 0;
+  int i;
+
+  for (i=max_midi_voices;i<24;i++) {
+    if ((voices[i].params.flags & (8 | 0x10)) == (8 | 0x10))
+      count++;
+  }
+  return count;
+}
+#endif
 
 /* note: return types for AudioInit and AudioKill are void in orig impl;
  *       made int for subsys map compatibility */
@@ -462,14 +479,11 @@ void AudioControl(int id, int op, generic *arg, gool_object *obj) {
 /**
  * update all voices
  *
- * this includes decrementing all counters, incl. sustain counters,
- * delay counters, ramp counters, and glide counters, keeping
- * voices on while they sustain (sustain counter > 0), incrementing/
- * decrementing amplitude and/or pitch while they ramp/glide, delaying
- * the key on event while they delay, and clearing corresponding flags
- * when target counter values are reached. in particular, a voice key
- * is turned off and the voice is freed when the sustain/'remaining
- * lifetime' reaches zero, or when it is forced off
+ * this includes decrementing the delayed-key, sample-repeat, ramp, and glide
+ * counters. case7val is the 16-bit delayed-key countdown; delay_counter is
+ * consumed only after the backend reports that a keyed sample's envelope has
+ * ended. sustain_counter is an allocation priority and is not a per-frame
+ * sample lifetime.
  *
  * all updated values are updated as attributes in the corresponding
  * lower level VoiceAttr object for a particular voice.
@@ -506,21 +520,25 @@ void AudioUpdate() {
     fade_vol += fade_vol_step; /* increase/decrease volume */
     SwSetMVol(fade_vol);
   }
-  #define KEYS_STATUS_ON 1
   SwGetAllKeysStatus(keys_status);
   flag=0;
   for (i=max_midi_voices;i<24;i++) {
     voice = &voices[i];
     if (!(voice->params.flags & 8)) { continue; } /* skip inactive/free voices */
     if (voice->params.flags & 0x10) { /* delayed voice? */
-      if (--voice->params.delay_counter == 0) { /* decrement delay; has countdown finished? */
-        voice->params.flags &= ~0x10; /* clear key triggered status */
-        SwNoteOn(i);
-      }
+      /* Retail decrements the uint16 at params+16 here. While it remains
+       * nonzero, no status, ramp, spatialization, or force-off work runs for
+       * this voice. */
+      if (--voice->params.case7val != 0) { continue; }
+      voice->params.flags &= ~0x10;
+      SwNoteOn(i);
     }
-    if (keys_status[i] == KEYS_STATUS_ON) {
-      if (--voice->params.sustain_counter != 0) {/* decrement sustain; still sustaining? */
-
+    if (keys_status[i] == SW_KEY_STATUS_ON_ENV_OFF) {
+      voice->params.delay_counter =
+        (int8_t)((uint8_t)voice->params.delay_counter - 1u);
+      if ((uint8_t)voice->params.delay_counter != 0) {
+        /* Repeat a completed sample while its repeat count remains. */
+        SwNoteOn(i);
       }
       else {
         SwNoteOff(i);
@@ -533,9 +551,6 @@ void AudioUpdate() {
         */
         continue;
       }
-    }
-    else {
-      voice->params.flags &= ~8;
     }
     if (voice->params.flags & 0x40) { /* currently ramping (amplitude)? */
       voice->params.amplitude += voice->params.ramp_step; /* increase amplitude */
