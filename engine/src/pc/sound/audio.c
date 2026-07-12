@@ -191,9 +191,9 @@ static sample_cache_entry *SampleCacheReserve(size_t bytes) {
 static void SampleNext(sampler_t *sampler, int len, int16_t *data) {
   sample_t *sample;
   double t;
-  int16_t *p, s;
-  int loop_len;
-  int i, idx;
+  int16_t *p, s, next_s;
+  int loop_len, loop_start;
+  int i, idx, next_idx;
 
   sample = sampler->sample;
   if (!sample) {
@@ -204,18 +204,28 @@ static void SampleNext(sampler_t *sampler, int len, int16_t *data) {
   for (i=0;i<len;i++) {
     idx = (int)sampler->t;
     t = sampler->t - (double)idx;
-    if (sample->loop_idx && idx >= sample->len) {
-      /* add negative index to go back to loop start */
-      sampler->t += (double)sample->loop_idx;
-      idx = (int)sampler->t;
+    if (sample->loop_idx) {
+      loop_start = sample->len + sample->loop_idx;
+      loop_len = sample->len - loop_start;
+      while (idx >= sample->len && loop_len > 0) {
+        sampler->t -= (double)loop_len;
+        idx = (int)sampler->t;
+        t = sampler->t - (double)idx;
+      }
     }
-    if (idx == sample->len-1) { --idx; t+=1.0; }
-    else if (idx >= sample->len) {
+    if (idx >= sample->len) {
       sampler->done=1;
       break;
     }
     s = sample->data[idx];
-    s+=t*(sample->data[idx+1]-s);
+    next_idx = idx + 1;
+    if (next_idx < sample->len)
+      next_s = sample->data[next_idx];
+    else if (sample->loop_idx)
+      next_s = sample->data[sample->len + sample->loop_idx];
+    else
+      next_s = s;
+    s += t*(next_s-s);
     *(p++) = (int16_t)((double)s*sampler->amp[0]);
     *(p++) = (int16_t)((double)s*sampler->amp[1]);
     sampler->t += sampler->freq;
@@ -420,8 +430,9 @@ void SwLoadSample(int voice_idx, uint32_t eid, uint8_t *data, size_t size) {
     return;
   }
   sample_cache_misses++;
-  if (!data || size < 32) return;
-  size -= 32;
+  if (!data || size < ADPCM_BLOCK_SIZE) return;
+  /* Decode the exact SPU payload. ADPCMToPCM16 stops at the first end marker,
+   * so any trailing sentinel is unreachable just as it is on the console. */
   if (!ADPCMDecodedSize(size, &decoded_capacity)
    || decoded_capacity < 2*sizeof(int16_t)
    || decoded_capacity / sizeof(int16_t) > INT_MAX) return;
@@ -450,8 +461,7 @@ void SwLoadSample(int voice_idx, uint32_t eid, uint8_t *data, size_t size) {
   }
   memcpy(sample->data, decoded, size);
   free(decoded);
-  /* used when interpolating looping samples */
-  sample->data[sample->len] = sample->data[0];
+  sample->data[sample->len] = sample->data[sample->len-1];
   cache_entry = SampleCacheReserve(allocation_size);
   if (cache_entry) {
     cache_entry->eid = eid;

@@ -8,7 +8,8 @@
 
 int main(void) {
   VagLine lines[2];
-  int16_t output[56];
+  VagLine loop_lines[4];
+  int16_t output[112];
   size_t bytes, decoded_size;
   uint8_t *large_adpcm, *large_pcm;
   int i, loop;
@@ -40,13 +41,47 @@ int main(void) {
   lines[1].flags = 1;
   bytes = ADPCMToPCM16((uint8_t*)lines, sizeof(lines),
     (uint8_t*)output, &loop);
-  assert(bytes == sizeof(output));
+  assert(bytes == 2 * 28 * sizeof(int16_t));
   assert(output[0] == 28672);
   assert(output[1] == 32767);
   assert(output[27] == 32767);
   assert(output[28] == -1025);
   assert(output[29] == -32768);
   assert(output[55] == -32768);
+
+  /* A loop-start marker does not make a one-shot repeat unless its end block
+   * also carries the repeat bit. */
+  memset(loop_lines, 0, sizeof(loop_lines));
+  loop_lines[0].flags = 4;
+  loop_lines[2].flags = 1;
+  loop_lines[3].flags = 7; /* unreachable retail sentinel */
+  loop = 99;
+  bytes = ADPCMToPCM16((uint8_t*)loop_lines, sizeof(loop_lines),
+    (uint8_t*)output, &loop);
+  assert(bytes == 3 * 28 * sizeof(int16_t));
+  assert(loop == -1);
+
+  /* End+repeat loops from the latest loop-start marker, including one at the
+   * first decoded block. */
+  memset(loop_lines, 0, sizeof(loop_lines));
+  loop_lines[0].flags = 6;
+  loop_lines[2].flags = 3;
+  loop = -1;
+  bytes = ADPCMToPCM16((uint8_t*)loop_lines, sizeof(loop_lines),
+    (uint8_t*)output, &loop);
+  assert(bytes == 3 * 28 * sizeof(int16_t));
+  assert(loop == 0);
+
+  memset(loop_lines, 0, sizeof(loop_lines));
+  loop_lines[0].flags = 6;
+  loop_lines[1].flags = 6;
+  loop_lines[3].flags = 3;
+  loop = -1;
+  bytes = ADPCMToPCM16((uint8_t*)loop_lines, sizeof(loop_lines),
+    (uint8_t*)output, &loop);
+  assert(bytes == sizeof(loop_lines) / sizeof(VagLine)
+    * 28 * sizeof(int16_t));
+  assert(loop == 28 * (int)sizeof(int16_t));
 
   /* The runtime allocates from the exact expansion size instead of decoding
    * into the old fixed 512 KiB scratch buffer. */

@@ -240,6 +240,7 @@ function runTitleAttractIntroScenario(telemetry) {
       audioCallbacks: telemetry.audioCallbacks,
       audioMaxGapUs: telemetry.audioMaxGapUs,
       activeSfx: telemetry.activeSfx,
+      completedSampleRekeys: telemetry.completedSampleRekeys,
       visible: document.visibilityState === "visible",
     });
     setScenarioPhase("intro-rendering");
@@ -260,6 +261,7 @@ function runTitleAttractIntroScenario(telemetry) {
       audioCallbacks: telemetry.audioCallbacks,
       audioMaxGapUs: telemetry.audioMaxGapUs,
       activeSfx: telemetry.activeSfx,
+      completedSampleRekeys: telemetry.completedSampleRekeys,
       visible: document.visibilityState === "visible",
     });
     if (audioFailure) {
@@ -578,6 +580,7 @@ setInterval(() => {
       sfxPeak: module._C1GetAudioSfxPeak(),
       activeSfx: module._C1GetAudioActiveSfx(),
       delayedVoices: module._C1GetAudioDelayedVoiceCount?.() ?? null,
+      completedSampleRekeys: module._C1GetAudioCompletedSampleRekeyCount?.() ?? null,
       sampleCacheHits: module._C1GetSampleCacheHits(),
       sampleCacheMisses: module._C1GetSampleCacheMisses(),
       sampleCacheBytes: module._C1GetSampleCacheBytes(),

@@ -12,6 +12,7 @@ function sample(overrides = {}) {
     audioCallbacks: 1,
     audioMaxGapUs: 0,
     activeSfx: 0,
+    completedSampleRekeys: 0,
     visible: true,
     ...overrides,
   };
@@ -38,6 +39,26 @@ function sample(overrides = {}) {
     { atMs: 0, count: 5 },
     { atMs: 500, count: 4 },
   ]);
+}
+
+{
+  const state = createIntroAudioRegressionState(sample());
+  assert.equal(sampleIntroAudioRegression(state, sample({
+    atMs: 1200,
+    delayedVoices: 4,
+    audioCallbacks: 40,
+    audioMaxGapUs: 43000,
+    activeSfx: 1,
+  })), null);
+  const failure = sampleIntroAudioRegression(state, sample({
+    atMs: 7000,
+    delayedVoices: 4,
+    audioCallbacks: 290,
+    audioMaxGapUs: 43000,
+    activeSfx: 1,
+    completedSampleRekeys: 1,
+  }));
+  assert.equal(failure, "Intro completed-sample rekeys reached 1");
 }
 
 {

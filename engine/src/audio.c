@@ -41,12 +41,11 @@ typedef struct {
 
 /* .sbss */
 int voice_id_ctr;                /* 8005663C; gp[0x90] */
+uint32_t completed_sample_rekey_count;
 Volume spatial_vol;              /* 80056640; gp[0x91] */
 audio_voice voices[24];          /* 80056804 */
 uint8_t keys_status[24];            /* 80056E64 */
 audio_voice_params voice_params; /* 80056E7C */
-
-#define master_voice voices[23]
 
 extern ns_struct ns;
 extern lid_t cur_lid;
@@ -70,6 +69,10 @@ EMSCRIPTEN_KEEPALIVE int C1GetAudioDelayedVoiceCount(void) {
   }
   return count;
 }
+
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetAudioCompletedSampleRekeyCount(void) {
+  return completed_sample_rekey_count;
+}
 #endif
 
 /* note: return types for AudioInit and AudioKill are void in orig impl;
@@ -80,23 +83,25 @@ int AudioInit() {
 
   for (i=0;i<24;i++)
     voices[i].params.flags &= ~8;
+  completed_sample_rekey_count = 0;
 
   SwAudioInit();
   /* route midi audio to voice 0 */
   SwVoiceSetCallback(0, SwMidiProcess);
   /* TinySoundFont sums a full music bus; keep it below gameplay transients. */
   SwVoiceSetGain(0, 1.5f);
-  /* set inital values for master voice */
-  master_voice.params.delay_counter = 1;
-  master_voice.params.sustain_counter = 128u;
-  master_voice.params.amplitude = 0x3FFF;
-  master_voice.params.pitch = 0x1000;
-  master_voice.params.obj = 0;
-  master_voice.params.case7val = 0;
-  master_voice.params.r_trans.x = 0;
-  master_voice.params.r_trans.y = 0;
-  master_voice.params.r_trans.z = 0;
-  master_voice.params.flags = (voice_params.flags & 0xFFFFF000) | 0x600;
+  /* Set the retail template copied into the next created voice. The original
+   * writes to voice_params at 0x80056E7C, not to hardware voice slot 23. */
+  voice_params.delay_counter = 1;
+  voice_params.sustain_counter = 128u;
+  voice_params.amplitude = 0x3FFF;
+  voice_params.pitch = 0x1000;
+  voice_params.obj = 0;
+  voice_params.case7val = 0;
+  voice_params.r_trans.x = 0;
+  voice_params.r_trans.y = 0;
+  voice_params.r_trans.z = 0;
+  voice_params.flags = (voice_params.flags & 0xFFFFF000) | 0x600;
   /* set reverb mode for levels with reverb */
   switch (cur_lid) {
   case LID_GENERATORROOM:
@@ -538,6 +543,7 @@ void AudioUpdate() {
         (int8_t)((uint8_t)voice->params.delay_counter - 1u);
       if ((uint8_t)voice->params.delay_counter != 0) {
         /* Repeat a completed sample while its repeat count remains. */
+        completed_sample_rekey_count++;
         SwNoteOn(i);
       }
       else {

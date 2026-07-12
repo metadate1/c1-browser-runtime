@@ -6,6 +6,9 @@
 #include "formats/smf.h"
 #include "formats/sf2.h"
 
+_Static_assert(sizeof(VagLine) == ADPCM_BLOCK_SIZE,
+  "PSX ADPCM block size mismatch");
+
 static inline int _setnc(char *dst, char *src, int slen) {
   int i;
 
@@ -61,16 +64,16 @@ size_t ADPCMToPCM16(uint8_t *adpcm, size_t size, uint8_t *pcm, int *loop) {
   int32_t s0, s1, sample, filtered, nibble;
   int16_t *dst;
   uint8_t *start;
-  int i, j;
+  int i, j, loop_candidate;
 
   start = pcm;
   s0 = 0; s1 = 0;
+  loop_candidate = -1;
   if (loop) { *loop = -1; }
   for (i = 0 ;i < (int)(size/sizeof(VagLine)); i++) {
     Next(adpcm, VagLine, line);
-    if ((line->flags & 4) && (i>1) && loop) {
-      *loop = (int)(pcm - start);
-    }
+    if (line->flags & 4)
+      loop_candidate = (int)(pcm - start);
     for (j=0;j<14;j++) {
       nibble = line->data[j].adl;
       if (nibble & 8) nibble -= 16;
@@ -92,7 +95,14 @@ size_t ADPCMToPCM16(uint8_t *adpcm, size_t size, uint8_t *pcm, int *loop) {
       Next(pcm, int16_t, dst);
       *dst = (int16_t)sample;
     }
-    if (line->flags & 1) { break; }
+    if (line->flags & 1) {
+      /* Bit 0 ends the sample. Bit 1 is what makes that end repeat from
+       * the most recent bit-2 loop marker; a marker alone does not loop a
+       * one-shot. */
+      if (loop && (line->flags & 2) && loop_candidate >= 0)
+        *loop = loop_candidate;
+      break;
+    }
   }
   size = pcm - start;
   return size;

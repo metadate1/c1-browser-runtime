@@ -14,6 +14,9 @@ export function createIntroAudioRegressionState(sample) {
     maxEarlyActiveSfx: 0,
     scheduleVerified: false,
     retentionVerified: false,
+    completedSampleRekeyApi: Number.isInteger(sample.completedSampleRekeys),
+    completedSampleRekeyBaseline: sample.completedSampleRekeys,
+    maxCompletedSampleRekeys: sample.completedSampleRekeys,
     callbacksObserved: sample.audioCallbacks > 0,
     callbackResets: 0,
     lastCallbackCount: sample.audioCallbacks,
@@ -47,6 +50,14 @@ export function sampleIntroAudioRegression(state, sample) {
   );
   if (sample.atMs <= DELAY_RETENTION_CHECK_MS)
     state.maxEarlyActiveSfx = Math.max(state.maxEarlyActiveSfx, sample.activeSfx);
+  if (Number.isInteger(sample.completedSampleRekeys)) {
+    state.maxCompletedSampleRekeys = Math.max(
+      state.maxCompletedSampleRekeys,
+      sample.completedSampleRekeys,
+    );
+    if (sample.completedSampleRekeys > state.completedSampleRekeyBaseline)
+      return `Intro completed-sample rekeys reached ${sample.completedSampleRekeys}`;
+  }
   recordDelayedVoiceSample(state, sample);
 
   if (sample.audioCallbacks !== state.lastCallbackCount) {
@@ -95,6 +106,8 @@ export function finishIntroAudioRegression(state) {
   if (!state.delayedVoiceApi) return "missing C1GetAudioDelayedVoiceCount export";
   if (!state.scheduleVerified) return "intro delayed-dialogue schedule was not verified";
   if (!state.retentionVerified) return "intro delayed-dialogue retention was not verified";
+  if (!state.completedSampleRekeyApi)
+    return "missing C1GetAudioCompletedSampleRekeyCount export";
   if (!state.callbacksObserved) return "browser audio callbacks never started during Intro";
   return null;
 }

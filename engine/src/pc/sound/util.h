@@ -3,6 +3,8 @@
 
 #include "common.h"
 
+#define ADPCM_BLOCK_SIZE 16u
+
 extern int ADPCMDecodedSize(size_t adpcm_size, size_t *pcm_size);
 extern size_t ADPCMToPCM16(uint8_t *adpcm, size_t size, uint8_t *pcm, int *loop);
 

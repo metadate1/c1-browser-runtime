@@ -26,7 +26,24 @@ static int last_note_off_voice;
 
 void MidiResetSeqVol(int16_t val) { (void)val; }
 void MidiUpdate(void *ref) { (void)ref; }
+void SwMidiProcess(int ch, float amp[2], float freq, int len, int16_t *data) {
+  (void)ch;
+  (void)amp;
+  (void)freq;
+  (void)len;
+  (void)data;
+}
+void SwAudioInit(void) {}
+void SwAudioKill(void) {}
 void SwSetMVol(int32_t vol) { (void)vol; }
+void SwVoiceSetCallback(int voice_idx, svoice_callback_t callback) {
+  (void)voice_idx;
+  (void)callback;
+}
+void SwVoiceSetGain(int voice_idx, float gain) {
+  (void)voice_idx;
+  (void)gain;
+}
 
 void SwGetAllKeysStatus(uint8_t *status) {
   memcpy(status, low_level_keys, sizeof(low_level_keys));
@@ -85,6 +102,47 @@ int32_t matan2(int32_t y, int32_t x) {
   return 0;
 }
 
+static void assert_audio_init_restores_first_voice_template(void) {
+  const int voice_idx = 16;
+  const uint32_t poisoned_flags = 0xA5A5AFFFu;
+
+  memset(voices, 0, sizeof(voices));
+  memset(keys_status, 0, sizeof(keys_status));
+  memset(low_level_keys, 0, sizeof(low_level_keys));
+  memset(&voice_params, 0xA5, sizeof(voice_params));
+  voice_params.flags = poisoned_flags;
+  completed_sample_rekey_count = 99;
+
+  assert(AudioInit() == SUCCESS);
+  assert(completed_sample_rekey_count == 0);
+  assert(voice_params.delay_counter == 1);
+  assert((uint8_t)voice_params.sustain_counter == 128u);
+  assert(voice_params.amplitude == 0x3FFF);
+  assert(voice_params.pitch == 0x1000);
+  assert(voice_params.obj == 0);
+  assert(voice_params.case7val == 0);
+  assert(voice_params.r_trans.x == 0);
+  assert(voice_params.r_trans.y == 0);
+  assert(voice_params.r_trans.z == 0);
+  assert(voice_params.flags == ((poisoned_flags & 0xFFFFF000u) | 0x600u));
+
+  /* The first voice created after AudioInit receives this template. Its
+   * completed one-shot must consume the default count of one and be freed,
+   * rather than wrapping an uninitialized zero to 255 and re-keying. */
+  voices[voice_idx].params = voice_params;
+  voices[voice_idx].params.flags |= 8;
+  low_level_keys[voice_idx] = SW_KEY_STATUS_ON_ENV_OFF;
+  note_on_count = note_off_count = 0;
+  last_note_on_voice = last_note_off_voice = -1;
+
+  AudioUpdate();
+  assert(note_on_count == 0);
+  assert(note_off_count == 1);
+  assert(last_note_off_voice == voice_idx);
+  assert(voices[voice_idx].params.delay_counter == 0);
+  assert(!(voices[voice_idx].params.flags & 8));
+}
+
 static void reset_delayed_voice(int voice_idx, uint16_t delay) {
   generic arg;
 
@@ -121,6 +179,7 @@ static void assert_delayed_start(uint16_t delay) {
 
   AudioUpdate();
   assert(note_on_count == 1);
+  assert(completed_sample_rekey_count == 0);
   assert(last_note_on_voice == voice_idx);
   assert(low_level_keys[voice_idx] == 1);
   assert(voices[voice_idx].params.flags & 8);
@@ -195,6 +254,7 @@ static void assert_completed_sample_repeats(void) {
 
   AudioUpdate();
   assert(note_on_count == 1);
+  assert(completed_sample_rekey_count == 1);
   assert(last_note_on_voice == voice_idx);
   assert(note_off_count == 0);
   assert(voices[voice_idx].params.delay_counter == 2);
@@ -204,17 +264,20 @@ static void assert_completed_sample_repeats(void) {
   /* Normal active playback does not consume another repeat. */
   AudioUpdate();
   assert(note_on_count == 1);
+  assert(completed_sample_rekey_count == 1);
   assert(voices[voice_idx].params.delay_counter == 2);
 
   low_level_keys[voice_idx] = SW_KEY_STATUS_ON_ENV_OFF;
   AudioUpdate();
   assert(note_on_count == 2);
+  assert(completed_sample_rekey_count == 2);
   assert(voices[voice_idx].params.delay_counter == 1);
   assert(voices[voice_idx].params.flags & 8);
 
   low_level_keys[voice_idx] = SW_KEY_STATUS_ON_ENV_OFF;
   AudioUpdate();
   assert(note_on_count == 2);
+  assert(completed_sample_rekey_count == 2);
   assert(note_off_count == 1);
   assert(last_note_off_voice == voice_idx);
   assert(voices[voice_idx].params.delay_counter == 0);
@@ -235,6 +298,7 @@ int main(void) {
   max_midi_voices = 16;
   fade_vol_step = 0;
 
+  assert_audio_init_restores_first_voice_template();
   for (i = 0; i < sizeof(intro_delays) / sizeof(intro_delays[0]); i++)
     assert_delayed_start(intro_delays[i]);
   assert_active_voice_has_no_artificial_timeout();
