@@ -151,6 +151,13 @@ else               { OBJECT(obj)->process.gool_links.children = c; }
 #define GoolObjectCalcBound(o,b) \
 GoolCalcBound(&(o)->bound, &(o)->process.vectors.trans, (b))
 
+/* The retail script for RuiOC reads an unbound pool reference in state 13.
+ * Address zero is readable on the PS1; reproduce its observed value on hosts
+ * where dereferencing a null pointer would terminate the game. */
+static inline uint32_t GoolPsxInputValue(const uint32_t *value) {
+  return value ? *value : 3;
+}
+
 /* object structure definitions */
 typedef struct {
   struct _gool_object *self; // 0x0

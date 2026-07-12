@@ -1,5 +1,6 @@
 import createC1Module from "./c1.mjs";
 import { extractCrashStreamsFromDisc } from "./disc-image.js";
+import { callMainOnce, isEmscriptenUnwind } from "./runtime-lifecycle.js";
 
 const LEVELS = [
   [0x03, "Cortex Power"], [0x04, "Cave"],
@@ -17,6 +18,11 @@ const LEVELS = [
   [0x2d, "Level Complete"], [0x2e, "Slippery Climb"], [0x33, "Tawna Bonus 2"],
   [0x34, "Cortex Bonus"], [0x37, "Castle Machinery"], [0x38, "Intro"], [0x39, "Ending"],
 ];
+
+// The retail 0x04 pair is an index-only asset archive. Keep importing and
+// mounting it for levels that reference those assets, but never boot it as a
+// standalone level because it has no LDAT metadata.
+const PLAYABLE_LEVELS = LEVELS.filter(([lid]) => lid !== 0x04);
 
 const shell = document.querySelector(".shell");
 const canvas = document.querySelector("#canvas");
@@ -47,6 +53,8 @@ let module;
 let mountedAssets;
 let launching = false;
 let importingDisc = false;
+let runtimeLocked = false;
+let runtimeFailure;
 let muted = false;
 let virtualPadState = 0;
 const activePointers = new Map();
@@ -59,7 +67,7 @@ window.addEventListener("error", (event) => {
 });
 window.addEventListener("unhandledrejection", (event) => {
   const message = String(event.reason?.stack || event.reason || "Unhandled promise rejection");
-  if (!message.toLowerCase().includes("unwind")) {
+  if (!isEmscriptenUnwind(event.reason)) {
     window.__consoleErrors.push(message);
     appendLog(`Unhandled rejection: ${message}`, "err");
   }
@@ -112,29 +120,40 @@ function formatBytes(bytes) {
   return `${value.toFixed(index === 0 || value >= 100 ? 0 : 1)} ${units[index]}`;
 }
 
+function updateControlAvailability(playableLevels = PLAYABLE_LEVELS.filter(([lid]) => hasLevelPair(lid))) {
+  const importsDisabled = runtimeLocked || launching || importingDisc;
+  chooseFolderButton.disabled = importsDisabled;
+  folderInput.disabled = importsDisabled;
+  fileInput.disabled = importsDisabled;
+  dropzone.setAttribute("aria-disabled", String(importsDisabled));
+  dropzone.tabIndex = importsDisabled ? -1 : 0;
+  bootLevel.disabled = playableLevels.length === 0 || importsDisabled;
+  launchButton.disabled = playableLevels.length === 0 || importsDisabled;
+  clearButton.disabled = streamFiles.size === 0 || importsDisabled;
+}
+
 function refreshAssets() {
   const previousBoot = Number(bootLevel.value);
-  const completeLevels = LEVELS.filter(([lid]) => hasLevelPair(lid));
+  const completePairs = LEVELS.filter(([lid]) => hasLevelPair(lid));
+  const playableLevels = PLAYABLE_LEVELS.filter(([lid]) => hasLevelPair(lid));
   const totalBytes = [...streamFiles.values()].reduce((sum, file) => sum + file.size, 0);
   recognizedFilesNode.textContent = `${streamFiles.size} file${streamFiles.size === 1 ? "" : "s"}`;
-  pairCountNode.textContent = String(completeLevels.length);
+  pairCountNode.textContent = String(completePairs.length);
   assetSizeNode.textContent = formatBytes(totalBytes);
 
   bootLevel.replaceChildren();
-  for (const [lid, name] of completeLevels) {
+  for (const [lid, name] of playableLevels) {
     const option = document.createElement("option");
     option.value = String(lid);
     option.textContent = `0x${lid.toString(16).padStart(2, "0").toUpperCase()} — ${name}`;
     bootLevel.append(option);
   }
 
-  bootLevel.disabled = completeLevels.length === 0 || launching || importingDisc;
-  launchButton.disabled = completeLevels.length === 0 || launching || importingDisc;
-  clearButton.disabled = streamFiles.size === 0 || launching || importingDisc;
+  updateControlAvailability(playableLevels);
 
-  if (completeLevels.length) {
-    const fallback = completeLevels.some(([lid]) => lid === 0x19) ? 0x19 : completeLevels[0][0];
-    bootLevel.value = String(completeLevels.some(([lid]) => lid === previousBoot) ? previousBoot : fallback);
+  if (playableLevels.length) {
+    const fallback = playableLevels.some(([lid]) => lid === 0x19) ? 0x19 : playableLevels[0][0];
+    bootLevel.value = String(playableLevels.some(([lid]) => lid === previousBoot) ? previousBoot : fallback);
   } else {
     const option = document.createElement("option");
     option.textContent = "Select game data first";
@@ -144,19 +163,23 @@ function refreshAssets() {
   assetMessage.className = "asset-message";
   if (!streamFiles.size) {
     assetMessage.textContent = "No game files selected yet.";
-  } else if (!completeLevels.length) {
+  } else if (!playableLevels.length) {
     assetMessage.classList.add("is-warning");
-    assetMessage.textContent = "Files were recognized, but no level has both its NSD and NSF file.";
-  } else if (completeLevels.length === LEVELS.length) {
+    assetMessage.textContent = "Files were recognized, but no playable level has both its NSD and NSF file.";
+  } else if (completePairs.length === LEVELS.length) {
     assetMessage.classList.add("is-ready");
-    assetMessage.textContent = "Full stream set recognized. The title screen and level transitions are available.";
+    assetMessage.textContent = "Full stream set recognized: 43 playable pairs plus the Cave asset archive.";
   } else {
     assetMessage.classList.add("is-warning");
-    assetMessage.textContent = `${completeLevels.length} bootable level pair${completeLevels.length === 1 ? "" : "s"}. Missing pairs can stop later level transitions.`;
+    assetMessage.textContent = `${playableLevels.length} bootable level pair${playableLevels.length === 1 ? "" : "s"}. Missing pairs can stop later level transitions.`;
   }
 }
 
 async function acceptFiles(files) {
+  if (runtimeLocked) {
+    appendLog("Game data is locked for this runtime. Reload the page to choose different files.", "err");
+    return;
+  }
   const candidates = [...files];
   const discImages = candidates.filter((file) => /\.(?:bin|iso)$/i.test(file.name));
   let accepted = 0;
@@ -243,7 +266,8 @@ async function filesFromDrop(dataTransfer) {
 }
 
 async function launch() {
-  if (launching || bootLevel.disabled) return;
+  if (runtimeLocked || launching || bootLevel.disabled) return;
+  runtimeLocked = true;
   launching = true;
   refreshAssets();
   setRuntimeState("loading", "Loading WebAssembly runtime");
@@ -251,15 +275,29 @@ async function launch() {
   progressBar.style.width = "2%";
   progressLabel.textContent = "Loading WebAssembly runtime…";
   appendLog("Creating wasm32 runtime.");
+  let abortReason;
 
   try {
+    const preservedWebGLContext = canvas.getContext("webgl", {
+      alpha: false,
+      antialias: false,
+      depth: true,
+      preserveDrawingBuffer: true,
+      stencil: false,
+    });
+    if (!preservedWebGLContext) throw new Error("WebGL is unavailable.");
     module = await createC1Module({
       canvas,
+      preinitializedWebGLContext: preservedWebGLContext,
+      GL_MAX_TEXTURE_IMAGE_UNITS: 1,
       noInitialRun: true,
       locateFile: (path) => `./${path}`,
       print: (message) => appendLog(message),
       printErr: (message) => appendLog(message, "err"),
-      onAbort: (reason) => failRuntime(`Engine aborted: ${reason}`),
+      onAbort: (reason) => {
+        abortReason = `Engine aborted: ${reason}`;
+        failRuntime(abortReason);
+      },
     });
 
     try { module.FS.mkdir("/streams"); } catch (error) {
@@ -290,45 +328,54 @@ async function launch() {
     progressBar.style.width = "100%";
     progressLabel.textContent = "Starting C1…";
     appendLog(`Starting at level 0x${selectedBoot.toString(16)}.`);
+    const mainResult = callMainOnce(module, [String(selectedBoot)]);
+    if (abortReason) throw new Error(abortReason);
+    if (mainResult.status !== 0) {
+      throw new Error(`Engine exited with status ${mainResult.status}.`);
+    }
+    if (runtimeFailure) throw new Error(runtimeFailure);
+
     setRuntimeState("running", "Native engine running");
+    progressLabel.textContent = "C1 is running.";
     fullscreenButton.disabled = false;
     muteButton.disabled = false;
     canvas.focus();
-
-    try {
-      module.callMain([String(selectedBoot)]);
-    } catch (error) {
-      if (!String(error).toLowerCase().includes("unwind")) throw error;
-    }
   } catch (error) {
     failRuntime(error?.stack || error);
   } finally {
     launching = false;
-    if (shell.dataset.runtimeState !== "running") refreshAssets();
+    updateControlAvailability();
   }
 }
 
 function failRuntime(reason) {
   const message = String(reason || "Unknown runtime failure");
+  const firstFailure = !runtimeLocked || runtimeFailure === undefined;
+  if (runtimeLocked && runtimeFailure === undefined) runtimeFailure = message;
   setRuntimeState("error", "Runtime error");
-  appendLog(message, "err");
-  progressLabel.textContent = "Runtime failed. Open the log for details.";
+  if (firstFailure) appendLog(message, "err");
+  progressLabel.textContent = "Runtime failed. Reload this page before trying again.";
   assetMessage.className = "asset-message is-warning";
-  assetMessage.textContent = "The engine stopped. Verify that the selected NSD/NSF files are from the NTSC-U disc.";
-  window.__consoleErrors.push(message);
+  assetMessage.textContent = runtimeLocked
+    ? "The engine stopped. Reload this page before starting another runtime."
+    : "The selected files could not be read. You can correct the selection and try again.";
+  if (firstFailure) window.__consoleErrors.push(message);
+  updateControlAvailability();
 }
 
 chooseFolderButton.addEventListener("click", (event) => {
   event.stopPropagation();
+  if (runtimeLocked) return;
   folderInput.click();
 });
 
 dropzone.addEventListener("click", (event) => {
-  if (event.target === chooseFolderButton) return;
+  if (runtimeLocked || event.target === chooseFolderButton) return;
   fileInput.click();
 });
 
 dropzone.addEventListener("keydown", (event) => {
+  if (runtimeLocked) return;
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
     folderInput.click();
@@ -358,6 +405,7 @@ dropzone.addEventListener("drop", async (event) => {
 });
 
 clearButton.addEventListener("click", () => {
+  if (runtimeLocked) return;
   streamFiles.clear();
   folderInput.value = "";
   fileInput.value = "";

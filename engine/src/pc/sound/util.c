@@ -43,12 +43,23 @@ static inline void zeromem(void *dst, int size) {
 d = (t*)g; \
 g += sizeof(t)
 
+int ADPCMDecodedSize(size_t adpcm_size, size_t *pcm_size) {
+  const size_t bytes_per_block = 28 * sizeof(int16_t);
+  size_t block_count;
+
+  if (!pcm_size) return 0;
+  block_count = adpcm_size / sizeof(VagLine);
+  if (block_count > SIZE_MAX / bytes_per_block) return 0;
+  *pcm_size = block_count * bytes_per_block;
+  return 1;
+}
+
 size_t ADPCMToPCM16(uint8_t *adpcm, size_t size, uint8_t *pcm, int *loop) {
   const int f0[16] ={ 0,60,115, 98,122,0,0,0,0,0,0,0,0,0,0,0 };
   const int f1[16] ={ 0, 0,-52,-55,-60,0,0,0,0,0,0,0,0,0,0,0 };
   VagLine *line;
-  double s0, s1, tmp;
-  int16_t *ld;
+  int32_t s0, s1, sample, filtered, nibble;
+  int16_t *dst;
   uint8_t *start;
   int i, j;
 
@@ -61,18 +72,25 @@ size_t ADPCMToPCM16(uint8_t *adpcm, size_t size, uint8_t *pcm, int *loop) {
       *loop = (int)(pcm - start);
     }
     for (j=0;j<14;j++) {
-      Next(pcm, int16_t, ld);
-      tmp = s0*(double)f0[line->predict]+s1*(double)f1[line->predict];
-      *ld=((int16_t)(line->data[j].adl<<12))>>line->factor;
+      nibble = line->data[j].adl;
+      if (nibble & 8) nibble -= 16;
+      filtered = (s0*f0[line->predict] + s1*f1[line->predict] + 32) >> 6;
+      sample = (nibble * 4096 >> line->factor) + filtered;
+      sample = limit(sample, -32768, 32767);
       s1 = s0;
-      s0 = (double)(*ld)+(tmp/64);
-      *ld=(int16_t)s0;
-      Next(pcm, int16_t, ld);
-      tmp = s0*(double)f0[line->predict]+s1*(double)f1[line->predict];
-      *ld=((int16_t)(line->data[j].adh<<12))>>line->factor;
+      s0 = sample;
+      Next(pcm, int16_t, dst);
+      *dst = (int16_t)sample;
+
+      nibble = line->data[j].adh;
+      if (nibble & 8) nibble -= 16;
+      filtered = (s0*f0[line->predict] + s1*f1[line->predict] + 32) >> 6;
+      sample = (nibble * 4096 >> line->factor) + filtered;
+      sample = limit(sample, -32768, 32767);
       s1 = s0;
-      s0 = (double)(*ld)+(tmp/64);
-      *ld=(int16_t)s0;
+      s0 = sample;
+      Next(pcm, int16_t, dst);
+      *dst = (int16_t)sample;
     }
     if (line->flags & 1) { break; }
   }

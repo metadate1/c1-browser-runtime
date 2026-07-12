@@ -718,8 +718,18 @@ int TgeoOnLoad(entry *tgeo) {
   else {
     for (i = 0; i < header->texinfo_count;) {
       info = (tgeo_texinfo*)&((uint32_t*)header->texinfos)[i];
-      if (info->colinfo.type == 1 && (info->tpage & 1))
-        NSOpen(&info->tpage, 0, 1); /* TODO: union? */
+      if (info->colinfo.type == 1) {
+        /*
+         * The first open converts the on-disc EID into an nsd_pte pointer.
+         * A texture-slot eviction re-arms that PTE with its odd pgid, while
+         * cached TGEO data keeps the pointer.  Reopen in either unresolved
+         * form, but do not add another reference while the page is resident.
+         */
+        if ((info->tpage & 1)
+         || (info->tpage
+          && (((nsd_pte*)(uintptr_t)info->tpage)->pgid & 1)))
+          NSOpen(&info->tpage, 0, 1); /* TODO: union? */
+      }
       i += info->colinfo.type == 1 ? sizeof(tgeo_texinfo) / sizeof(uint32_t)
                                   : sizeof(tgeo_colinfo) / sizeof(uint32_t);
     }
@@ -1109,24 +1119,31 @@ void GfxTransformFragment(gool_frag *frag, int32_t z, eid_t tpag,
   texinfo info;
   uint32_t z_sum, z_dist;
   void **prims_tail;
-  int i, tinf_idx, z_idx, texid;
+  int i, tinf_idx, z_idx, texid, res = 1;
 
   verts[2].x=bound->p1.x;verts[2].y=bound->p1.y;
   verts[3].x=bound->p2.x;verts[3].y=bound->p1.y;
   verts[0].x=bound->p1.x;verts[0].y=bound->p2.y;
   verts[1].x=bound->p2.x;verts[1].y=bound->p2.y;
-  for (i=0;i<4;i++) {
+  for (i=0;i<3;i++) {
     verts[i].z = 0;
-    SwRotTransPers(&verts[i], &r_verts[i], &params.trans, &params.m_rot,
-      &params.screen, screen_proj);
+    if (!SwRotTransPers(&verts[i], &r_verts[i], &params.trans, &params.m_rot,
+      &params.screen, screen_proj)) res = 0;
   }
-  // if (_$A2 < 0) { return 0; } /* return on fail */ // TODO!
+  /* Retail checks the accumulated RTPT flag for the first three corners. */
+  if (!res) return;
+  verts[3].z = 0;
+  /* The fourth corner uses RTPS and its flag is intentionally unchecked. */
+  SwRotTransPers(&verts[3], &r_verts[3], &params.trans, &params.m_rot,
+    &params.screen, screen_proj);
   prims_tail=GLGetPrimsTail();
-  prim=(poly4i*)(*prims_tail);
   info.colinfo = frag->texinfo.colinfo;
   info.rgninfo = frag->texinfo.rgninfo;
   info.tpage = tpag;
   texid=TextureLoad(&info, &uvs);
+  if (texid == -1) return;
+  prim=(poly4i*)GLReservePrimitive(prims_tail, sizeof(*prim));
+  if (!prim) return;
   for (i=0;i<4;i++) {
     prim->verts[i]=r_verts[i];
     /*prim->colors[i]=info->rgb;*/
@@ -1143,7 +1160,6 @@ void GfxTransformFragment(gool_frag *frag, int32_t z, eid_t tpag,
   prim->prim.next=next;
   prim->prim.type=2;
   ((poly4i**)ot)[z_idx]=prim;
-  *prims_tail+=sizeof(poly4i);
 }
 
 //----- (80018DBC) --------------------------------------------------------
@@ -1156,24 +1172,31 @@ void GfxTransformFontChar(gool_object *obj, gool_glyph *glyph, int32_t z,
   rgb8 rgb;
   int32_t z_sum, z_dist;
   void **prims_tail;
-  int i, idx, z_idx, texid;
+  int i, idx, z_idx, texid, res = 1;
 
   verts[2].x=bound->p1.x;verts[2].y=bound->p1.y;
   verts[3].x=bound->p2.x;verts[3].y=bound->p1.y;
   verts[0].x=bound->p1.x;verts[0].y=bound->p2.y;
   verts[1].x=bound->p2.x;verts[1].y=bound->p2.y;
-  for (i=0;i<4;i++) {
+  for (i=0;i<3;i++) {
     verts[i].z = 0;
-    SwRotTransPers(&verts[i], &r_verts[i], &params.trans, &params.m_rot,
-      &params.screen, screen_proj);
+    if (!SwRotTransPers(&verts[i], &r_verts[i], &params.trans, &params.m_rot,
+      &params.screen, screen_proj)) res = 0;
   }
-  // if (_$T0 < 0) { return 0; } /* return on fail */ // TODO!
+  /* Retail checks the accumulated RTPT flag for the first three corners. */
+  if (!res) return;
+  verts[3].z = 0;
+  /* The fourth corner uses RTPS and its flag is intentionally unchecked. */
+  SwRotTransPers(&verts[3], &r_verts[3], &params.trans, &params.m_rot,
+    &params.screen, screen_proj);
   prims_tail=GLGetPrimsTail();
-  prim=(poly4i*)*prims_tail;
   info.colinfo = glyph->texinfo.colinfo;
   info.rgninfo = glyph->texinfo.rgninfo;
   info.tpage = tpag;
   texid=TextureLoad(&info, &uvs);
+  if (texid == -1) return;
+  prim=(poly4i*)GLReservePrimitive(prims_tail, sizeof(*prim));
+  if (!prim) return;
   for (i=0;i<4;i++) {
     prim->verts[i]=r_verts[i];
     if (gouraud) {
@@ -1198,7 +1221,6 @@ void GfxTransformFontChar(gool_object *obj, gool_glyph *glyph, int32_t z,
   prim->prim.next=next;
   prim->prim.type=2;
   ((poly4i**)ot)[z_idx]=prim;
-  *prims_tail+=sizeof(poly4i);
 }
 
 //----- (80019144) --------------------------------------------------------

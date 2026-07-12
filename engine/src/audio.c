@@ -128,7 +128,7 @@ static Volume AudioSpatialize(vec *v, int vol) {
   vec va;
   uint32_t mag, amp;
   int32_t ang_xz;
-  uint16_t left, right;
+  uint16_t base, left, right;
 
   va.x = v->x / 32; /* 3 or 15 bit frac fixed point */
   va.y = v->y / 32;
@@ -141,15 +141,16 @@ static Volume AudioSpatialize(vec *v, int vol) {
     mag = SwSqrMagnitude2(va.x, va.z);
 
   if (mag > (32<<10)-1) {
-    left = (vol << 15) / mag; /* 5bffp or 17bffp... */
-    right = left;
+    base = (vol << 15) / mag; /* 5bffp or 17bffp... */
+    left = base;
+    right = base;
     if (!mono) {
       ang_xz = atan2(va.z, va.x);
       amp = cos(ang_xz) + 0x1000; /* cos in (0-2) range */
       /* 5bffp * 12bffp = 17bffp; 17bffp >> 11 = 7bffp / 2
          i.e. left = left*(1 + (2.0-amp))/2 */
-      left = (left + left*(0x2000 - amp)) >> 11;
-      right = (left + left*amp) >> 11;
+      left = (base + base*(0x2000 - amp)) >> 11;
+      right = (base + base*amp) >> 11;
     }
     left = limit(left, 0, vol);
     right = limit(right, 0, vol);

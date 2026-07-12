@@ -167,20 +167,23 @@ void tree_remove_node(tree_node_t *node) {
  * \returns tree_node_t* - [possibly new] root of the tree
  */
 tree_node_t *tree_remove_node_inherit(tree_node_t *node) {
-  tree_node_t *root, *parent, *it, *next;
+  tree_node_t *root, *parent, *it;
+
+  if (!node) { return 0; }
 
   root = node;
   while (root->parent) { root = root->parent; }
   if (node == root) {
     parent = root = node->child;
-    tree_remove_node(node->child);
+    if (!parent) { return 0; }
+    tree_remove_node(parent);
   }
   else {
     parent = node->parent;
     tree_remove_node(node);
   }
-  for (it=node->child;it;it=next) {
-    next = it->next;
+  while ((it = node->child)) {
+    tree_remove_node(it);
     tree_add_node(parent, it);
   }
   return root;
@@ -385,11 +388,12 @@ int tree_remove(tree_node_t *root, void *data) {
  * \returns tree_node_t* - [possibly new] root of the tree, or 0 if value cannot be found
  */
 tree_node_t *tree_remove_inherit(tree_node_t *root, void *data) {
-  tree_node_t *n, *p, *it, *next;
+  tree_node_t *n;
 
   tree_first_node(root, n, n->data == data);
   if (n == 0) { return 0; }
   root = tree_remove_node_inherit(n);
+  tree_node_free(n, 0);
   return root;
 }
 
@@ -484,6 +488,7 @@ int tree_child_count(tree_node_t *parent) {
   tree_node_t *it;
   tree_node_t *droot, *dit;
 
+  if (!root) { return 0; }
   droot = tree_node_new();
   droot->data = root->data;
   for_each_child_node(root, it) {
@@ -708,7 +713,7 @@ void tree_delta_free(tree_delta_t *delta) {
  */
 list_t *tree_changes(tree_node_t *src, tree_node_t *dst) {
   /* flatten src and dst; then get src - dst, dst - src */
-  tree_node_t *sr, *node, *sn, *dn, *nl, *nr, *it;
+  tree_node_t *sr, *node, *sn, *dn, *nl, *nr, *parent, *prev;
   tree_delta_t *delta;
   list_t *sf, *df, *sd, *dd, *sc, *dl;
   int si, di;
@@ -730,54 +735,58 @@ list_t *tree_changes(tree_node_t *src, tree_node_t *dst) {
   }
   list_for_each(dd, val) {
     /*
-       for each node in dst only
-       if it hasnt already been added to the intermediary list
-       create a new node for it to be placed in the intermediary list
-       and while its parent value in the dst list is also only in dst
-         create new nodes for each parent and so on that is only in dst
-         until one is found with a value also in src
-         or until there is no more parent (root of dst is reached)
-       add the new node or the topmost new node to the parent with existing
-       value in intermediary list
+       Destination-only values retain dst preorder, so every non-root node's
+       parent has already been retained or inserted into the intermediary
+       tree. A destination-only root uses the dedicated new-root delta.
     */
-    if (!tree_contains(sr, val)) {
-      node = tree_find_node(dst, val);
-      sn = tree_node_new();
-      sn->data = val;
-      while (node && node->parent && !tree_contains(sr, node->parent->data)) {
-        node = node->parent;
-        sn->parent = tree_node_new();
-        sn = sn->parent;
-        sn->data = node->data;
-      }
-      delta = tree_delta_alloc();
-      if (!node) {
-        delta->op = 5; /* new root; add old root as child */
-        delta->parent = 0;
-        delta->prev = 0;
-        delta->value = sn->data;
-        list_append(dl, delta);
-        for (node=sn->child;node;node=node->child) {
-          delta = tree_delta_alloc();
-          delta->op = 1;
-          delta->parent = node->parent->data;
-          delta->prev = 0;
-          delta->value = node->data;
-          list_append(dl, delta);
-        }
-        tree_add_node(sn, sr);
-        sr = sn;
-      }
-      else {
-        delta->op = 1;
-        delta->parent = node->parent->data;
-        delta->prev = node->prev ? node->prev->data : 0;
-        delta->value = node->data;
-        list_append(dl, delta);
-        node = tree_find_node(sr, node->parent->data);
-        tree_add_node(node, sn);
-      }
+    if (tree_contains(sr, val)) { continue; }
+    dn = tree_find_node(dst, val);
+    sn = tree_node_new();
+    sn->data = val;
+    delta = tree_delta_alloc();
+    delta->value = val;
+    if (!dn->parent) {
+      delta->op = 5; /* new root; add the old root as a child when present */
+      delta->parent = 0;
+      delta->prev = 0;
+      list_append(dl, delta);
+      if (sr) { tree_add_node(sn, sr); }
+      sr = sn;
     }
+    else {
+      delta->op = 1;
+      delta->parent = dn->parent->data;
+      delta->prev = dn->prev ? dn->prev->data : 0;
+      list_append(dl, delta);
+      parent = tree_find_node(sr, delta->parent);
+      prev = tree_find_node(sr, delta->prev);
+      tree_insert_node(parent, prev, sn);
+    }
+  }
+  /* A move delta always requires a parent, so an existing descendant cannot
+   * be moved directly into the root position. Remove that node while its
+   * parent inherits its children, then recreate its value as the new root;
+   * the normal move/order passes below restore the destination layout. */
+  if (sr && dst && sr->data != dst->data
+   && tree_contains(sr, dst->data)) {
+    delta = tree_delta_alloc();
+    delta->op = 2;
+    delta->value = dst->data;
+    delta->parent = 0;
+    delta->prev = 0;
+    list_append(dl, delta);
+    sr = tree_remove_inherit(sr, dst->data);
+
+    delta = tree_delta_alloc();
+    delta->op = 5;
+    delta->value = dst->data;
+    delta->parent = 0;
+    delta->prev = 0;
+    list_append(dl, delta);
+    sn = tree_node_new();
+    sn->data = dst->data;
+    if (sr) { tree_add_node(sn, sr); }
+    sr = sn;
   }
   sc = tree_flatten(sr);
   list_for_each_reverse(sc, val) {
@@ -814,6 +823,12 @@ list_t *tree_changes(tree_node_t *src, tree_node_t *dst) {
       else { break; }
     }
   }
+  if (sr) { tree_node_free(sr, 1); }
+  list_free(sc, 1);
+  list_free(dd, 1);
+  list_free(sd, 1);
+  list_free(df, 1);
+  list_free(sf, 1);
   return dl;
 }
 
@@ -833,7 +848,7 @@ tree_node_t *tree_apply(tree_node_t *src, list_t *deltas) {
   list_for_each(deltas, delta) {
     switch (delta->op) {
       case 2: // remove
-        tree_remove_inherit(dst, delta->value);
+        dst = tree_remove_inherit(dst, delta->value);
         break;
       case 3: // move
         node = tree_find_node(dst, delta->value);
@@ -857,7 +872,7 @@ tree_node_t *tree_apply(tree_node_t *src, list_t *deltas) {
       case 5:
         node = tree_node_new();
         node->data = delta->value;
-        tree_add_node(node, dst);
+        if (dst) { tree_add_node(node, dst); }
         dst = node;
         break;
     }

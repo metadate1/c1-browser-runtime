@@ -20,6 +20,11 @@ typedef struct {
   int _box_count;
 } level_state;
 
+/* Retail keeps a second spawn-zone reference only for the two hog levels. */
+static inline int LdatZoneRefIncrement(lid_t lid) {
+  return lid == LID_HOGWILD || lid == LID_WHOLEHOG ? 2 : 1;
+}
+
 /* zone query structure definitions */
 typedef struct {
   union {

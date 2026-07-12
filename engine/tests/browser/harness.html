@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>C1 renderer parity harness</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font: 13px monospace; }
+  nav { display: flex; gap: 8px; padding: 8px; position: sticky; top: 0; background: #111; z-index: 2; }
+  button { padding: 8px 12px; }
+  #stage { position: relative; width: 1024px; height: 768px; margin: 0 auto; }
+  canvas { position: absolute; inset: 0; display: block; width: 1024px; height: 768px; }
+  pre { white-space: pre-wrap; padding: 8px; }
+</style>
+<nav>
+  <button id="start">Start</button>
+  <button id="death" disabled>Fall death</button>
+  <button id="drown" disabled>Drown</button>
+  <button id="forward" disabled>Forward 8s</button>
+  <button id="mapSpin" disabled>Map rotate 10s</button>
+  <button id="padDown" disabled>Down</button>
+  <button id="padCross" disabled>Cross</button>
+  <button id="padStart" disabled>Pad Start</button>
+  <button id="padSelect" disabled>Select</button>
+  <button id="freeze" disabled>Freeze frame</button>
+</nav>
+<div id="stage">
+  <canvas id="canvas" width="1024" height="768" tabindex="0"></canvas>
+</div>
+<pre id="result" data-status="idle">HARNESS IDLE</pre>
+<pre id="metrics">{}</pre>
+<pre id="log">idle</pre>
+<script type="module" src="/harness.mjs"></script>

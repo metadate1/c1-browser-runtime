@@ -1825,11 +1825,8 @@ static uint32_t* GoolTranslateInGop(gool_object *obj, uint32_t gop) {
 /* PSX doesn't crash when accessing 0x00000000, and NTSC-U RuiOC gool
    ends up accessing nullptr in its state 13 tpc. */
 #ifdef GOOL_IGNORE_NULLPTR_IN_GOP_ACCESS
-static uint32_t nullptr_fix = 0x00000003;
-static uint32_t* GoolTranslateInGopNullptr(gool_object *obj, uint32_t gop) {
-  uint32_t* res;
-  res = GoolTranslateInGop(obj, gop);
-  return res ? res : &nullptr_fix;
+static uint32_t GoolTranslateInGopValue(gool_object *obj, uint32_t gop) {
+  return GoolPsxInputValue(GoolTranslateInGop(obj, gop));
 }
 #endif
 
@@ -1953,9 +1950,9 @@ static inline void GoolOpReactSolidSurfaces(gool_object*,uint32_t);
 
 #ifdef GOOL_IGNORE_NULLPTR_IN_GOP_ACCESS
 #define G_TRANS_GOPA(obj,ins,a) \
-a = *(GoolTranslateInGopNullptr(obj,G_OPA(ins)))
+a = GoolTranslateInGopValue(obj,G_OPA(ins))
 #define G_TRANS_GOPB(obj,ins,b) \
-b = *(GoolTranslateInGopNullptr(obj,G_OPB(ins)))
+b = GoolTranslateInGopValue(obj,G_OPB(ins))
 #else
 #define G_TRANS_GOPA(obj,ins,a) \
 a = *(GoolTranslateInGop(obj,G_OPA(ins)))

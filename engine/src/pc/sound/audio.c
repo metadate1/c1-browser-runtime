@@ -2,6 +2,7 @@
 #include "util.h"
 
 #include <SDL2/SDL.h>
+#include <limits.h>
 #include <math.h>
 
 #ifdef __EMSCRIPTEN__
@@ -378,13 +379,13 @@ void SwSetMVol(int32_t vol) {
   m_amp = (double)vol / SVOICE_VOL_BASE;
 }
 
-uint8_t pcm_buf[0x80000];
 void SwLoadSample(int voice_idx, uint32_t eid, uint8_t *data, size_t size) {
   svoice_t *svoice;
   sampler_t *sampler;
   sample_t *sample;
   sample_cache_entry *cache_entry;
-  size_t allocation_size;
+  uint8_t *decoded;
+  size_t allocation_size, decoded_capacity;
   int loop_offs, loop_idx;
 
   svoice = &svoices[voice_idx];
@@ -404,12 +405,24 @@ void SwLoadSample(int voice_idx, uint32_t eid, uint8_t *data, size_t size) {
   sample_cache_misses++;
   if (!data || size < 32) return;
   size -= 32;
-  size = ADPCMToPCM16(data, size, pcm_buf, &loop_offs);
-  data = pcm_buf;
-  if (size < 2*sizeof(int16_t)) return;
+  if (!ADPCMDecodedSize(size, &decoded_capacity)
+   || decoded_capacity < 2*sizeof(int16_t)
+   || decoded_capacity / sizeof(int16_t) > INT_MAX) return;
+  decoded = (uint8_t*)malloc(decoded_capacity);
+  if (!decoded) return;
+  size = ADPCMToPCM16(data, size, decoded, &loop_offs);
+  if (size < 2*sizeof(int16_t)
+   || size / sizeof(int16_t) > INT_MAX
+   || size > SIZE_MAX - sizeof(sample_t) - sizeof(int16_t)) {
+    free(decoded);
+    return;
+  }
   allocation_size = sizeof(sample_t)+size+sizeof(int16_t);
   sample = (sample_t*)malloc(allocation_size);
-  if (!sample) return;
+  if (!sample) {
+    free(decoded);
+    return;
+  }
   sampler->sample = sample;
   sampler->cache_entry = 0;
   sample->len = size/sizeof(int16_t);
@@ -418,7 +431,8 @@ void SwLoadSample(int voice_idx, uint32_t eid, uint8_t *data, size_t size) {
     loop_idx = loop_offs/sizeof(int16_t);
     sample->loop_idx = loop_idx - sample->len;
   }
-  memcpy(sample->data, data, size);
+  memcpy(sample->data, decoded, size);
+  free(decoded);
   /* used when interpolating looping samples */
   sample->data[sample->len] = sample->data[0];
   cache_entry = SampleCacheReserve(allocation_size);

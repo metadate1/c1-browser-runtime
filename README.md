@@ -19,7 +19,7 @@ Open [http://127.0.0.1:4173](http://127.0.0.1:4173). You can select either:
 - a raw NTSC-U `.bin` disc image; the browser extracts the `S0`–`S3` streams locally, or
 - the extracted `.NSD`/`.NSF` files from the disc’s `S0`–`S3` directories.
 
-Select the title screen or any complete level pair and press **Launch native build**. The retail disc contains 44 recognized level pairs. Partial sets can boot individual levels, but later transitions may stop when data is missing.
+Select the title screen or any complete playable pair and press **Launch native build**. The retail disc contains 44 recognized stream pairs: 43 playable boot targets and the `0x04` Cave pair, which is an index-only asset archive used by other levels. Cave stays imported and mounted but is not offered as a standalone boot target. Partial sets can boot individual levels, but later transitions may stop when data is missing.
 
 If you prefer extracting once instead of selecting the BIN on each page load, run:
 
@@ -56,7 +56,7 @@ The engine runs in wasm32 because C1 stores many pointers and tagged references 
 
 ## Current compatibility truth
 
-The browser port is operational, but C1 is still an incomplete reimplementation of the retail executable. Current browser smoke tests cover full-disc import (88 streams / 44 level pairs), publisher screens, the main menu, password/load/options states, direct level boot, keyboard input, audio, and returning between menus. The options screen renders all four entries and its volume, mono/stereo, and exit controls work.
+The browser port is operational, but C1 is still an incomplete reimplementation of the retail executable. Current browser smoke tests cover full-disc import (88 streams / 44 recognized pairs, with 43 playable boot targets), publisher screens, the main menu, password/load/options states, direct level boot, keyboard input, audio, and returning between menus. The options screen renders all four entries and its volume, mono/stereo, and exit controls work.
 
 Browser persistence has two separate records. The retail 15-slot virtual memory card remains under `c1.virtual-memory-card.v1`, preserving its 128-byte payload and card-state handshake. A checksummed automatic resume snapshot lives under `c1.browser-resume.v1`; it captures progression and options about once per second and when the page is hidden or closed, then restores before the title flow starts. Malformed resume data is quarantined instead of overwriting a valid manual card.
 

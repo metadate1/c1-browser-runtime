@@ -73,9 +73,7 @@ int LdatInit() {
     memset((void*)&spawns, 0, sizeof(spawns)); /* clear spawn list */
     GoolInitLevelSpawns(ns.lid); /* reset spawn list */
     progress_spawn = 0;
-    ref_inc = 2;
-    if (cur_lid == LID_HOGWILD && cur_lid == LID_WHOLEHOG)
-      ref_inc = 1;
+    ref_inc = LdatZoneRefIncrement(cur_lid);
     GfxInitMatrices();
     if (cur_lid == LID_TITLE && game_state == 0x200 && ldat_not_inited == 0)
       ldat->zone_spawn = NSStringToEID(title_zone_name);

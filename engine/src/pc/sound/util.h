@@ -3,6 +3,7 @@
 
 #include "common.h"
 
+extern int ADPCMDecodedSize(size_t adpcm_size, size_t *pcm_size);
 extern size_t ADPCMToPCM16(uint8_t *adpcm, size_t size, uint8_t *pcm, int *loop);
 
 extern size_t VabToSf2(uint8_t *vab, uint8_t *sf2);

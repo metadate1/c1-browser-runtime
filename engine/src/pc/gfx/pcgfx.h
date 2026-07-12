@@ -4,7 +4,7 @@
 #include "geom.h"
 
 /* gfx primitive types */
-#define PRIM_NEXT(p) (void*)((int)((p)->next) & ~3)
+#define PRIM_NEXT(p) (void*)((uintptr_t)((p)->next) & ~(uintptr_t)3)
 #define PRIM_SETNEXT(p,n) { \
 int type; prim_struct *prim; \
 prim = (prim_struct*)p; \

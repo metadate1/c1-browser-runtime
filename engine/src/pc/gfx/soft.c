@@ -4,11 +4,13 @@
 #include "soft.h"
 #include "pcgfx.h"
 #include "tex.h"
+#include "gl.h"
 #include "math.h"
 
 #define gte_divide(a,b) ((a)/(b))
 
 sw_transform_struct params;
+static uint32_t last_world_primitive_count;
 
 extern entry *cur_zone;
 
@@ -43,9 +45,12 @@ int SwRot(vec *in, vec *out, mat16 *m_rot) {
 
 #define v in
 #define r m_rot->m
-  r_vert.x=(int64_t)((int64_t)(r[0][0]*v->x)+(r[0][1]*v->y)+(r[0][2]*v->z))>>12;
-  r_vert.y=(int64_t)((int64_t)(r[1][0]*v->x)+(r[1][1]*v->y)+(r[1][2]*v->z))>>12;
-  r_vert.z=(int64_t)((int64_t)(r[2][0]*v->x)+(r[2][1]*v->y)+(r[2][2]*v->z))>>12;
+  r_vert.x=((int64_t)r[0][0]*v->x+(int64_t)r[0][1]*v->y
+           +(int64_t)r[0][2]*v->z)>>12;
+  r_vert.y=((int64_t)r[1][0]*v->x+(int64_t)r[1][1]*v->y
+           +(int64_t)r[1][2]*v->z)>>12;
+  r_vert.z=((int64_t)r[2][0]*v->x+(int64_t)r[2][1]*v->y
+           +(int64_t)r[2][2]*v->z)>>12;
 #undef v
 #undef r
   res = 1;
@@ -64,9 +69,12 @@ int SwRotTrans(vec *in, vec *out, vec *trans, mat16 *m_rot) {
 #define v in
 #define t trans
 #define r m_rot->m
-  r_vert.x=(int64_t)((int64_t)(t->x<<12)+(r[0][0]*v->x)+(r[0][1]*v->y)+(r[0][2]*v->z))>>12;
-  r_vert.y=(int64_t)((int64_t)(t->y<<12)+(r[1][0]*v->x)+(r[1][1]*v->y)+(r[1][2]*v->z))>>12;
-  r_vert.z=(int64_t)((int64_t)(t->z<<12)+(r[2][0]*v->x)+(r[2][1]*v->y)+(r[2][2]*v->z))>>12;
+  r_vert.x=((int64_t)t->x*0x1000+(int64_t)r[0][0]*v->x
+           +(int64_t)r[0][1]*v->y+(int64_t)r[0][2]*v->z)>>12;
+  r_vert.y=((int64_t)t->y*0x1000+(int64_t)r[1][0]*v->x
+           +(int64_t)r[1][1]*v->y+(int64_t)r[1][2]*v->z)>>12;
+  r_vert.z=((int64_t)t->z*0x1000+(int64_t)r[2][0]*v->x
+           +(int64_t)r[2][1]*v->y+(int64_t)r[2][2]*v->z)>>12;
 #undef v
 #undef t
 #undef r
@@ -79,24 +87,44 @@ int SwRotTrans(vec *in, vec *out, vec *trans, mat16 *m_rot) {
   return res;
 }
 
-/* accuracy here depends on whether GTE division is emulated or normal division is used */
+static int32_t SwProjectGteAxis(int32_t value, int32_t z, int32_t offset,
+  uint32_t proj, int *saturated) {
+  int32_t ir = limit(value, -0x8000, 0x7FFF);
+  int64_t projected;
+
+  if (ir != value) *saturated = 1;
+  if ((uint32_t)z * 2 <= proj) {
+    /* The GTE divide quotient saturates just below 2.0 (17-bit unsigned). */
+    *saturated = 1;
+    projected = (int64_t)offset
+              + (((int64_t)ir * 0x1FFFF) >> 16);
+  }
+  else {
+    /* Preserve the port's fixed-point ordering for unsaturated vertices. */
+    projected = ((int64_t)offset * 0x10000
+              + (((int64_t)ir * ((int64_t)proj * 0x10000)) / z)) >> 16;
+  }
+  if (projected < -0x400 || projected > 0x3FF) *saturated = 1;
+  return limit(projected, -0x400, 0x3FF);
+}
+
+/* Emulate the RTPS saturation used by the original PlayStation renderer. */
 int SwRotTransPers(vec *in, vec *out, vec *trans, mat16 *m_rot, vec2 *offs, uint32_t proj) {
   vec r_vert;
   vec s_vert;
-  int res;
+  int res, saturated = 0;
 
   res = SwRotTrans(in, &r_vert, trans, m_rot);
-  if (r_vert.z == 0) { r_vert.z = 1; }
-  s_vert.x = ((int64_t)(offs->x<<16)+(((int64_t)r_vert.x*(proj<<16))/r_vert.z))>>16;
-  s_vert.y = ((int64_t)(offs->y<<16)+(((int64_t)r_vert.y*(proj<<16))/r_vert.z))>>16;
-  s_vert.z = r_vert.z;
-  if (s_vert.x < -0x400 || s_vert.x > 0x3FF
-    || s_vert.y < -0x400 || s_vert.y > 0x3FF) {
-    res = 0;
-  }
+  s_vert.z = limit(r_vert.z, 0, 0xFFFF);
+  if (s_vert.z != r_vert.z) saturated = 1;
+  s_vert.x = SwProjectGteAxis(r_vert.x, s_vert.z, offs->x, proj, &saturated);
+  s_vert.y = SwProjectGteAxis(r_vert.y, s_vert.z, offs->y, proj, &saturated);
+  if (saturated) res = 0;
   *out=s_vert;
   return res;
 }
+
+uint32_t SwWorldPrimitiveCount(void) { return last_world_primitive_count; }
 
 #define SwZeroMat(m) \
 m[0][0]=0;m[0][1]=0;m[0][2]=0; \
@@ -267,9 +295,12 @@ void SwCalcObjectRotMatrix(
   SwCopyMatrix(&params->m_rot, &m_rot2);
   SwDiagMatrix(&m_scale, &scale);
   SwMulMatrix(&params->m_rot, &m_scale);
-  params->m_rot.m[1][0] /= 8; params->m_rot.m[1][0] *= -5;
-  params->m_rot.m[1][1] /= 8; params->m_rot.m[1][1] *= -5;
-  params->m_rot.m[1][2] /= 8; params->m_rot.m[1][2] *= -5;
+  /* Retail 0x80039BD4 multiplies each coefficient by five before its
+   * arithmetic shift.  Dividing first loses three low bits and can move
+   * object vertices by a pixel relative to world geometry/collision. */
+  params->m_rot.m[1][0] = -((params->m_rot.m[1][0] * 5) >> 3);
+  params->m_rot.m[1][1] = -((params->m_rot.m[1][1] * 5) >> 3);
+  params->m_rot.m[1][2] = -((params->m_rot.m[1][2] * 5) >> 3);
   params->m_rot.m[2][0] = -params->m_rot.m[2][0];
   params->m_rot.m[2][1] = -params->m_rot.m[2][1];
   params->m_rot.m[2][2] = -params->m_rot.m[2][2];
@@ -314,9 +345,11 @@ int SwCalcSpriteRotMatrix(
   SwRotMatrixZXY(&params->m_rot, &rot);
   SwDiagMatrix(&m_scale, &scale);
   SwMulMatrix(&params->m_rot, &m_scale);
-  params->m_rot.m[1][0] /= 8; params->m_rot.m[1][0] *= -5;
-  params->m_rot.m[1][1] /= 8; params->m_rot.m[1][1] *= -5;
-  params->m_rot.m[1][2] /= 8; params->m_rot.m[1][2] *= -5;
+  /* Match the retail GTE path: multiply before the arithmetic shift so the
+   * low three coefficient bits still contribute to sprite positioning. */
+  params->m_rot.m[1][0] = -((params->m_rot.m[1][0] * 5) >> 3);
+  params->m_rot.m[1][1] = -((params->m_rot.m[1][1] * 5) >> 3);
+  params->m_rot.m[1][2] = -((params->m_rot.m[1][2] * 5) >> 3);
   params->m_rot.m[2][0] = 0; /* limit rotation to xy plane */
   params->m_rot.m[2][1] = 0;
   params->m_rot.m[2][2] = 0;
@@ -375,7 +408,14 @@ void SwTransformSvtx(
            - (r_verts[1].x*r_verts[0].y) - (r_verts[2].x*r_verts[1].y);
       if (ndot == 0 || (ndot ^ cull_face) < 0) { continue; }
     }
-    prim=(poly3i*)*prims_tail;
+    if (info.colinfo.type == 1) { /* textured poly? */
+      texid = TextureLoad((texinfo*)&info, &uvs);
+      if (texid == -1) continue;
+    }
+    else
+      texid = -1;
+    prim=(poly3i*)GLReservePrimitive(prims_tail, sizeof(*prim));
+    if (!prim) return;
     if (poly->is_flat_shaded) {
       color.r=info.colinfo.r;
       color.g=info.colinfo.g;
@@ -417,11 +457,6 @@ void SwTransformSvtx(
         prim->colors[ii]=Rgb8ToA32(color);
       }
     }
-    if (info.colinfo.type == 1) { /* textured poly? */
-      texid = TextureLoad((texinfo*)&info, &uvs);
-    }
-    else
-      texid = -1;
     for (ii=0;ii<3;ii++) {
       prim->verts[ii]=r_verts[ii];
       prim->uvs[ii]=uvs[ii];
@@ -441,7 +476,6 @@ void SwTransformSvtx(
     prim->prim.next = next;
     prim->prim.type = 1;
     ((poly3i**)ot)[z_idx] = prim;
-    *prims_tail+=sizeof(poly3i);
   }
 }
 
@@ -501,7 +535,14 @@ void SwTransformCvtx(
       if (!info.colinfo.no_cull) { continue; }
       idx_adj = 12;
     }
-    prim=(poly3i*)*prims_tail;
+    if (info.colinfo.type == 1) { /* textured poly? */
+      texid = TextureLoad((texinfo*)&info, &uvs);
+      if (texid == -1) continue;
+    }
+    else
+      texid = -1;
+    prim=(poly3i*)GLReservePrimitive(prims_tail, sizeof(*prim));
+    if (!prim) return;
     t1=info.colinfo.t1;t2=info.colinfo.t2;t3=info.colinfo.t3;
     for (ii=0;ii<3;ii++) {
       vert=poly_verts[ii];
@@ -516,11 +557,6 @@ void SwTransformCvtx(
         : (128-abs(t3))*255 + ((abs(t3)-1)*(int32_t)vert->b))*32)>>(shamt+12);
       prim->colors[ii]=Rgb8ToA32(color);
     }
-    if (info.colinfo.type == 1) { /* textured poly? */
-      texid = TextureLoad((texinfo*)&info, &uvs);
-    }
-    else
-      texid = -1;
     for (ii=0;ii<3;ii++) {
       prim->verts[ii]=r_verts[ii];
       prim->uvs[ii]=uvs[ii];
@@ -534,7 +570,6 @@ void SwTransformCvtx(
     prim->prim.next = next;
     prim->prim.type = 1;
     ((poly3i**)ot)[z_idx] = prim;
-    *prims_tail+=sizeof(poly3i);
   }
 }
 
@@ -552,22 +587,26 @@ void SwTransformSprite(
   vec verts[4], r_verts[4]; /* corners */
   fvec uvs[4];
   int32_t z_sum;
-  int i, texid, z_idx, res;
+  int i, texid, z_idx, res = 1;
 
   verts[0].x=-size;verts[0].y= size;verts[0].z=0;
   verts[1].x= size;verts[1].y= size;verts[1].z=0;
   verts[2].x=-size;verts[2].y=-size;verts[2].z=0;
   verts[3].x= size;verts[3].y=-size;verts[3].z=0;
   for (i=0;i<4;i++) {
-    res = SwRotTransPers(&verts[i], &r_verts[i], &params->trans, &params->m_rot,
-      &params->screen, params->screen_proj);
+    if (!SwRotTransPers(&verts[i], &r_verts[i], &params->trans,
+      &params->m_rot, &params->screen, params->screen_proj)) res = 0;
   }
-  if (!res) { return; } /* return on fail */
-  prim=(poly4i*)*prims_tail;
+  /* The retail RTPT + RTPS path rejects the sprite if either GTE operation
+   * sets the summary error flag, so all four corners must be valid. */
+  if (!res) return;
   info.colinfo = info2->colinfo;
   info.rgninfo = info2->rgninfo;
   info.tpage = tpag;
   texid=TextureLoad(&info, &uvs);
+  if (texid == -1) return;
+  prim=(poly4i*)GLReservePrimitive(prims_tail, sizeof(*prim));
+  if (!prim) return;
   for (i=0;i<4;i++) {
     prim->verts[i]=r_verts[i];
     prim->colors[i]=Rgb8ToA32(info.colinfo.rgb);
@@ -582,7 +621,6 @@ void SwTransformSprite(
   prim->prim.next=next;
   prim->prim.type=2;
   ((poly4i**)ot)[z_idx] = prim;
-  *prims_tail+=sizeof(poly4i);
 }
 
 extern mat16 ms_rot;
@@ -673,7 +711,7 @@ static void SwTransformAndShadeWorlds(
   wgeo_texinfo *texinfos, *wgeo_info;
   texinfo info;
   eid_t *tpags, tpag;
-  vec trans, u_verts[3], r_verts[3], v_verts[3];
+  vec trans, u_verts[3], r_verts[3];
   rgb8 colors[3];
   fvec uvs[4]; /* only first 3 are used */
   poly3i *prim, *next;
@@ -683,6 +721,7 @@ static void SwTransformAndShadeWorlds(
 
   worlds = params->worlds;
   poly_ids = poly_id_list->ids;
+  last_world_primitive_count = 0;
   min_z_idx = 0x7FF;
   for (i=poly_id_list->len-1;i>=0;i--) {
     poly_id = poly_ids[i];
@@ -725,6 +764,7 @@ static void SwTransformAndShadeWorlds(
     tpag = tpags[poly->tpag_idx];
     wgeo_info = (wgeo_texinfo*)(&((uint32_t*)texinfos)[info_idx]);
     info.colinfo = wgeo_info->colinfo; /* convert to generic texinfo */
+    memset(uvs, 0, sizeof(uvs));
     if (info.colinfo.type == 1) {
        if (poly->anim_mask) {
          info_idx = anim_counter >> poly->anim_period;
@@ -735,9 +775,11 @@ static void SwTransformAndShadeWorlds(
          info.rgninfo = wgeo_info->rgninfo;
        info.tpage = tpag;
        texid = TextureLoad(&info, &uvs);
+       if (texid == -1) continue;
     }
     else { texid = -1; }
-    prim = (poly3i*)*prims_tail;
+    prim = (poly3i*)GLReservePrimitive(prims_tail, sizeof(*prim));
+    if (!prim) return;
     for (ii=0;ii<3;ii++) {
       prim->verts[ii] = r_verts[ii];
       prim->colors[ii] = Rgb8ToA32(colors[ii]);
@@ -756,7 +798,7 @@ static void SwTransformAndShadeWorlds(
     prim->prim.next = next;
     prim->prim.type = 1;
     ((poly3i**)ot)[z_idx] = prim;
-    *prims_tail += sizeof(poly3i);
+    last_world_primitive_count++;
   }
 }
 
@@ -1018,7 +1060,8 @@ void SwTransformZoneQuery(zone_query *query, void *ot, void **prims_tail) {
     color.g = 127+((type&2)*(subtype+1)*2);
     color.b = 127+((type&4)*(subtype+1)*2);
     for (ii=0;ii<6;ii++) {
-      prim=(poly4i*)(*prims_tail);
+      prim=(poly4i*)GLReservePrimitive(prims_tail, sizeof(*prim));
+      if (!prim) return;
       for (iii=0;iii<4;iii++) {
         prim->verts[iii]=r_verts[rface_vert_idxes[ii][iii]];
         prim->colors[iii]=Rgb8ToA32(color);
@@ -1029,7 +1072,6 @@ void SwTransformZoneQuery(zone_query *query, void *ot, void **prims_tail) {
       prim->prim.next=next;
       prim->prim.type=3;
       ((poly4i**)ot)[0x7FE]=prim;
-      *prims_tail+=sizeof(poly4i);
     }
   }
 }
@@ -1060,7 +1102,8 @@ void SwDrawWallMap(uint32_t *wall_bitmap, void *ot, void **prims_tail) {
     wallmap_image = GLCreateTexture(rect.dim, (uint8_t*)pixels);
   else
     GLUpdateTexture(wallmap_image, rect, (uint8_t*)pixels);
-  prim=(poly4i*)(*prims_tail);
+  prim=(poly4i*)GLReservePrimitive(prims_tail, sizeof(*prim));
+  if (!prim) return;
   for (i=0;i<4;i++) {
     prim->verts[i].x = (i%2)?0:32;
     prim->verts[i].y = (i/2)?32:0;
@@ -1076,7 +1119,6 @@ void SwDrawWallMap(uint32_t *wall_bitmap, void *ot, void **prims_tail) {
   prim->prim.next=next;
   prim->prim.type=2;
   ((poly4i**)ot)[0x7FE]=prim;
-  *prims_tail+=sizeof(poly4i);
 }
 
 void SwTransformObjectBounds(gool_bound *bounds, int count, void *ot, void **prims_tail) {
@@ -1105,7 +1147,8 @@ void SwTransformObjectBounds(gool_bound *bounds, int count, void *ot, void **pri
     color.g = 255;
     color.b = 255;
     for (ii=0;ii<6;ii++) {
-      prim=(poly4i*)(*prims_tail);
+      prim=(poly4i*)GLReservePrimitive(prims_tail, sizeof(*prim));
+      if (!prim) return;
       for (iii=0;iii<4;iii++) {
         prim->verts[iii]=r_verts[rface_vert_idxes[ii][iii]];
         prim->colors[iii]=Rgb8ToA32(color);
@@ -1116,7 +1159,6 @@ void SwTransformObjectBounds(gool_bound *bounds, int count, void *ot, void **pri
       prim->prim.next=next;
       prim->prim.type=3;
       ((poly4i**)ot)[0x7FE]=prim;
-      *prims_tail+=sizeof(poly4i);
     }
   }
 }

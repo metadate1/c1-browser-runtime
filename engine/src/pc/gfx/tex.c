@@ -9,33 +9,54 @@ extern quad28_t uv_map[600];
 
 uint32_t pixel_5551_8888(uint16_t p, int mode) {
   int r, g, b, a;
+  int stp;
 
   r = (p >> 0) & 0x1F;
   g = (p >> 5) & 0x1F;
   b = (p >> 10) & 0x1F;
-  a = (p >> 15);
+  stp = p >> 15;
 
   r = ((r*510)+31)/62;
   g = ((g*510)+31)/62;
   b = ((b*510)+31)/62;
 
   switch (mode) {
-  case 0: a = a == 1 ? 0x7F : (r|g|b) == 0 ? 0 : 0xFF; break;
-  case 1: a = a == 1 ? 0xFF : (r|g|b) == 0 ? 0 : 0xFF; break;
-  case 2: a = a == 1 ? 0xFF : (r|g|b) == 0 ? 0 : 0xFF; break;
-  case 3: a = a == 1 ? 0xFF : (r|g|b) == 0 ? 0 : 0xFF; break;
+  case 0:
+    a = stp ? 0x7F : (r|g|b) == 0 ? 0 : 0xFF;
+    break;
+  case 1:
+    /* Additive PS1 semi-transparency is selected only by STP texels. Alpha
+     * zero makes the destination factor one; ordinary texels remain opaque. */
+    a = stp ? 0 : (r|g|b) == 0 ? 0 : 0xFF;
+    break;
+  case 2:
+    /* Mode 2 is rendered in opaque and subtractive alpha-test passes. */
+    a = stp ? 0x7F : (r|g|b) == 0 ? 0 : 0xFF;
+    break;
+  case 3:
+    /* C1 uses value 3 for ordinary opaque textured primitives.  Keep
+     * nonzero texels opaque while retaining PS1 zero-texel transparency. */
+    a = !stp && (r|g|b) == 0 ? 0 : 0xFF;
+    break;
+  default:
+    a = (r|g|b) == 0 ? 0 : 0xFF;
+    break;
   }
-  return (a << 24) | (b << 16) | (g << 8) | r;
+  return ((uint32_t)a << 24) | ((uint32_t)b << 16)
+       | ((uint32_t)g << 8) | (uint32_t)r;
 }
 
 #define TEX_TPAGE_FIRST        8
 #define TEX_TPAGE_COUNT        8
-#define TEX_TPAGE_MEMSIZE      TEX_TPAGE_COUNT*((1024+512+256)*128)*2*sizeof(uint32_t)
+#define TEX_BLEND_MODE_COUNT   4
+#define TEX_ATLASES_PER_PAGE   (3*TEX_BLEND_MODE_COUNT)
+#define TEX_TPAGE_MEMSIZE      TEX_TPAGE_COUNT*((1024+512+256)*128)*TEX_BLEND_MODE_COUNT*sizeof(uint32_t)
 #define TEX_CACHE_BUCKETSIZE   0x200
 #define TEX_CACHE_TABLE_SIZE   0x4000
 #define TEX_OWNED_MAX_COUNT    2048
 #define TEX_OWNED_MAX_BYTES    (32u*1024u*1024u)
 #define TEX_ATLAS_MAX_ROWS     16
+#define TEX_UPLOAD_MAX_BYTES   (1024u*128u*sizeof(uint32_t))
 
 typedef struct _tex_cache_entry {
   int valid;
@@ -48,6 +69,7 @@ typedef struct _tex_cache_entry {
 typedef struct {
   uint8_t *data;
   rect2 rect;
+  rect2 dirty;
   int invalid;
   int tpage_id;
   int texid;
@@ -61,11 +83,25 @@ typedef struct {
 typedef struct {
   eid_t eids[TEX_TPAGE_COUNT];
   tex_cache_entry table[TEX_TPAGE_COUNT][TEX_CACHE_TABLE_SIZE];
-  tex_atlas atlases[TEX_TPAGE_COUNT*6];
+  tex_atlas atlases[TEX_TPAGE_COUNT*TEX_ATLASES_PER_PAGE];
   uint8_t data[TEX_TPAGE_MEMSIZE];
+  uint8_t upload[TEX_UPLOAD_MAX_BYTES];
   uint32_t owned_count;
   size_t owned_bytes;
   int owned_limit_warned;
+  uint32_t frame_requests;
+  uint32_t frame_hits;
+  uint32_t frame_misses;
+  uint32_t frame_failures;
+  uint32_t frame_missing_pages;
+  uint32_t frame_generation_misses;
+  uint32_t frame_cache_failures;
+  uint32_t frame_page_changes;
+  uint32_t total_misses;
+  uint32_t total_failures;
+  uint32_t total_page_changes;
+  uint32_t frame_upload_bytes;
+  uint32_t total_upload_bytes;
   tex_create_callback_t create;
   tex_delete_callback_t delete;
   tex_subimage_callback_t subimage;
@@ -80,8 +116,8 @@ tex_cache cache;
 
 extern page_struct texture_pages[16];
 
-static int TextureAlphaClass(const texinfo *info) {
-  return info->colinfo.semi_trans == 0 ? 0 : 1;
+static int TextureBlendMode(const texinfo *info) {
+  return info->colinfo.semi_trans & 3;
 }
 
 static int TextureKeyEquals(const texinfo *a, const texinfo *b) {
@@ -90,7 +126,7 @@ static int TextureKeyEquals(const texinfo *a, const texinfo *b) {
    || a->rgninfo.segment != b->rgninfo.segment
    || a->rgninfo.offs_x != b->rgninfo.offs_x
    || a->rgninfo.offs_y != b->rgninfo.offs_y
-   || TextureAlphaClass(a) != TextureAlphaClass(b)) {
+   || TextureBlendMode(a) != TextureBlendMode(b)) {
     return 0;
   }
   if (a->rgninfo.color_mode < 2) {
@@ -129,7 +165,7 @@ static void TextureRegion(const texinfo *info, quad28 *quad, rect2 *rect,
 static int TextureImageKeyEquals(const texinfo *a, const rect2 *a_rect,
   const texinfo *b, const rect2 *b_rect) {
   if (a->rgninfo.color_mode != b->rgninfo.color_mode
-   || TextureAlphaClass(a) != TextureAlphaClass(b)
+   || TextureBlendMode(a) != TextureBlendMode(b)
    || a_rect->x != b_rect->x || a_rect->y != b_rect->y
    || a_rect->w != b_rect->w || a_rect->h != b_rect->h) {
     return 0;
@@ -185,11 +221,13 @@ static void TextureEnsurePage(int idx) {
   int i;
 
   if (cache.eids[idx] == page->eid) return;
+  cache.frame_page_changes++;
+  cache.total_page_changes++;
   TextureCacheClearPage(idx);
-  for (i = 0; i < 6; i++) {
-    atlas = &cache.atlases[idx * 6 + i];
-    memset(atlas->data, 0, (size_t)atlas->rect.w * atlas->rect.h * sizeof(uint32_t));
-    atlas->invalid = 1;
+  for (i = 0; i < TEX_ATLASES_PER_PAGE; i++) {
+    atlas = &cache.atlases[idx * TEX_ATLASES_PER_PAGE + i];
+    atlas->invalid = 0;
+    memset(&atlas->dirty, 0, sizeof(atlas->dirty));
     atlas->tpage_id = idx;
     atlas->row_count = 0;
     atlas->packed_height = 0;
@@ -215,10 +253,23 @@ void TexturesInit(
   cache.owned_count = 0;
   cache.owned_bytes = 0;
   cache.owned_limit_warned = 0;
+  cache.frame_requests = 0;
+  cache.frame_hits = 0;
+  cache.frame_misses = 0;
+  cache.frame_failures = 0;
+  cache.frame_missing_pages = 0;
+  cache.frame_generation_misses = 0;
+  cache.frame_cache_failures = 0;
+  cache.frame_page_changes = 0;
+  cache.total_misses = 0;
+  cache.total_failures = 0;
+  cache.total_page_changes = 0;
+  cache.frame_upload_bytes = 0;
+  cache.total_upload_bytes = 0;
   data = cache.data;
   for (i=0;i<TEX_TPAGE_COUNT;i++) {
-    for (j=0;j<6;j++) {
-      idx = (i*6)+j;
+    for (j=0;j<TEX_ATLASES_PER_PAGE;j++) {
+      idx = (i*TEX_ATLASES_PER_PAGE)+j;
       w = 1 << (10 - (j%3));
       atlas = &cache.atlases[idx];
       atlas->data = data;
@@ -241,7 +292,7 @@ void TexturesKill() {
 
   for (i=0;i<TEX_TPAGE_COUNT;i++)
     TextureCacheClearPage(i);
-  for (i=0;i<TEX_TPAGE_COUNT*6;i++) {
+  for (i=0;i<TEX_TPAGE_COUNT*TEX_ATLASES_PER_PAGE;i++) {
     atlas = &cache.atlases[i];
     (*cache.delete)(atlas->texid);
   }
@@ -250,13 +301,22 @@ void TexturesKill() {
 void TexturesUpdate() {
   tex_atlas *atlas;
   rect2 rect;
+  uint32_t y;
   int i;
 
-  for (i=0;i<TEX_TPAGE_COUNT*6;i++) {
+  for (i=0;i<TEX_TPAGE_COUNT*TEX_ATLASES_PER_PAGE;i++) {
     atlas = &cache.atlases[i];
     if (atlas->invalid) {
-      rect.x=0;rect.y=0;rect.dim=atlas->rect.dim;
-      (*cache.subimage)(atlas->texid, rect, atlas->data);
+      rect = atlas->dirty;
+      for (y = 0; y < rect.h; y++) {
+        memcpy(cache.upload + (size_t)y * rect.w * sizeof(uint32_t),
+          atlas->data + ((size_t)(rect.y + y) * atlas->rect.w + rect.x)
+                        * sizeof(uint32_t),
+          (size_t)rect.w * sizeof(uint32_t));
+      }
+      (*cache.subimage)(atlas->texid, rect, cache.upload);
+      cache.frame_upload_bytes += rect.w * rect.h * sizeof(uint32_t);
+      cache.total_upload_bytes += rect.w * rect.h * sizeof(uint32_t);
       atlas->invalid = 0;
     }
   }
@@ -265,6 +325,15 @@ void TexturesUpdate() {
 void TexturesBeginFrame(void) {
   int i;
 
+  cache.frame_requests = 0;
+  cache.frame_hits = 0;
+  cache.frame_misses = 0;
+  cache.frame_failures = 0;
+  cache.frame_missing_pages = 0;
+  cache.frame_generation_misses = 0;
+  cache.frame_cache_failures = 0;
+  cache.frame_page_changes = 0;
+  cache.frame_upload_bytes = 0;
   for (i = 0; i < TEX_TPAGE_COUNT; i++)
     TextureEnsurePage(i);
 }
@@ -294,7 +363,7 @@ void TexturesBeginFrame(void) {
 void TextureCopy(uint8_t *src, uint8_t *dst, dim2 *sdim, dim2 *ddim,
   rect2 *srect, pnt2 *dloc,
   void *clut, int clut_type, int color_mode, int semi_trans) {
-  uint32_t *data, palette[256], *dst32;
+  uint32_t palette[256], *dst32;
   uint16_t *clut_data, *src16;
   pnt2 pnt, *clut_loc;
   dim2 dim;
@@ -370,12 +439,17 @@ void TextureCopy(uint8_t *src, uint8_t *dst, dim2 *sdim, dim2 *ddim,
 /**
  * retrieves the corresponding texture page [struct] index for a tpag eid
  */
-static int TexturePageIdx(entry_ref *tpag) {
+static eid_t TextureRefEid(uint32_t reference) {
+  if (reference & 1) return reference;
+  if (!reference) return EID_NONE;
+  return ((entry*)(uintptr_t)reference)->eid;
+}
+
+static int TexturePageIdx(uint32_t tpag) {
   eid_t eid;
   int i;
 
-  if (tpag->is_eid) { eid = tpag->eid; }
-  else { eid = tpag->en->eid; }
+  eid = TextureRefEid(tpag);
   for (i=TEX_TPAGE_FIRST;i<16;i++) {
     //if (i<cache.global_count && cache.global_eids[i] == eid) { break; }
     if (texture_pages[i].eid == eid) { break; }
@@ -383,15 +457,29 @@ static int TexturePageIdx(entry_ref *tpag) {
   return i < 16 ? i - TEX_TPAGE_FIRST : -1;
 }
 
+/*
+ * A physical slot can be replaced after rendering for the current frame has
+ * started. Keep resolving textures from the snapshotted generation until the
+ * next TexturesBeginFrame retires it; primitives already queued in this frame
+ * still reference that generation's atlas.
+ */
+static int TextureCachedPageIdx(uint32_t tpag) {
+  eid_t eid = TextureRefEid(tpag);
+  int i;
+
+  for (i = 0; i < TEX_TPAGE_COUNT; i++) {
+    if (cache.eids[i] == eid) return i;
+  }
+  return -1;
+}
+
 /**
  * retrieves the corresponding texture page for a tpag eid
  */
-static tpage *TexturePage(entry_ref *tpag) {
-  eid_t eid;
-  int i, idx;
+static tpage *TexturePage(uint32_t tpag) {
+  int idx;
 
-  eid = tpag->is_eid ? tpag->eid : tpag->en->eid;
-  idx = TexturePageIdx((entry_ref*)&eid);
+  idx = TexturePageIdx(tpag);
   if (idx == -1) { return 0; }
   //if (idx < cache.global_count) { return cache.global_tpages[idx]; }
   return (tpage*)texture_pages[TEX_TPAGE_FIRST + idx].page;
@@ -404,8 +492,8 @@ static tex_atlas *TextureAtlas(tpage *tpage, int color_mode, int semi_trans) {
   tex_atlas *atlas;
   int i, idx;
 
-  i = TexturePageIdx((entry_ref*)&tpage->eid);
-  idx = i*6 + (color_mode + (semi_trans == 0 ? 3 : 0));
+  i = TexturePageIdx(tpage->eid);
+  idx = i*TEX_ATLASES_PER_PAGE + color_mode + ((semi_trans & 3) * 3);
   atlas = &cache.atlases[idx];
   if (atlas->tpage_id == -1)
     atlas->tpage_id = i;
@@ -445,6 +533,24 @@ static int TextureAtlasReserve(tex_atlas *atlas, uint32_t width,
   return 1;
 }
 
+static void TextureAtlasMarkDirty(tex_atlas *atlas, rect2 dirty) {
+  int right, bottom;
+
+  if (!atlas->invalid) {
+    atlas->dirty = dirty;
+    atlas->invalid = 1;
+    return;
+  }
+  right = max(atlas->dirty.x + (int32_t)atlas->dirty.w,
+              dirty.x + (int32_t)dirty.w);
+  bottom = max(atlas->dirty.y + (int32_t)atlas->dirty.h,
+               dirty.y + (int32_t)dirty.h);
+  atlas->dirty.x = min(atlas->dirty.x, dirty.x);
+  atlas->dirty.y = min(atlas->dirty.y, dirty.y);
+  atlas->dirty.w = right - atlas->dirty.x;
+  atlas->dirty.h = bottom - atlas->dirty.y;
+}
+
 static void TextureAtlasWrite(tex_atlas *atlas, tpage *tpage, rect2 rect,
   pnt2 inner, pnt2 clut, int color_mode, int semi_trans) {
   uint32_t *pixels = (uint32_t*)atlas->data;
@@ -464,7 +570,11 @@ static void TextureAtlasWrite(tex_atlas *atlas, tpage *tpage, rect2 rect,
   memcpy(&pixels[(inner.y + rect.h) * stride + inner.x - 1],
     &pixels[(inner.y + rect.h - 1) * stride + inner.x - 1],
     (rect.w + 2) * sizeof(uint32_t));
-  atlas->invalid = 1;
+  rect.x = inner.x - 1;
+  rect.y = inner.y - 1;
+  rect.w += 2;
+  rect.h += 2;
+  TextureAtlasMarkDirty(atlas, rect);
 }
 
 /**
@@ -497,9 +607,9 @@ static int TextureNew(texinfo *texinfo, fvec (*uvs)[4]) {
   }
   clut.x = texinfo->colinfo.clut_x;
   clut.y = texinfo->rgninfo.clut_y;
-  tpage = TexturePage((entry_ref*)&texinfo->tpage);
+  tpage = TexturePage(texinfo->tpage);
   if (tpage == 0) { return -1; }
-  page_idx = TexturePageIdx((entry_ref*)&texinfo->tpage);
+  page_idx = TexturePageIdx(texinfo->tpage);
   if (page_idx == -1) { return -1; }
   atlas = TextureAtlas(tpage, texinfo->rgninfo.color_mode, texinfo->colinfo.semi_trans);
   hash = texinfo->rgninfo.color_mode<<12|texinfo->rgninfo.segment<<10
@@ -605,6 +715,20 @@ uint32_t TextureOwnedBytes(void) {
   return (uint32_t)cache.owned_bytes;
 }
 
+uint32_t TextureFrameRequestCount(void) { return cache.frame_requests; }
+uint32_t TextureFrameHitCount(void) { return cache.frame_hits; }
+uint32_t TextureFrameMissCount(void) { return cache.frame_misses; }
+uint32_t TextureFrameFailureCount(void) { return cache.frame_failures; }
+uint32_t TextureFrameMissingPageCount(void) { return cache.frame_missing_pages; }
+uint32_t TextureFrameGenerationMissCount(void) { return cache.frame_generation_misses; }
+uint32_t TextureFrameCacheFailureCount(void) { return cache.frame_cache_failures; }
+uint32_t TextureFramePageChangeCount(void) { return cache.frame_page_changes; }
+uint32_t TextureTotalMissCount(void) { return cache.total_misses; }
+uint32_t TextureTotalFailureCount(void) { return cache.total_failures; }
+uint32_t TextureTotalPageChangeCount(void) { return cache.total_page_changes; }
+uint32_t TextureFrameUploadBytes(void) { return cache.frame_upload_bytes; }
+uint32_t TextureTotalUploadBytes(void) { return cache.total_upload_bytes; }
+
 /**
 * returns the id of the atlas
 * which contains the texture referenced by the given texinfo
@@ -615,7 +739,7 @@ static int TextureLookup(texinfo *texinfo, fvec(*uvs)[4]) {
   uint32_t hash, i;
   int idx;
 
-  idx = TexturePageIdx((entry_ref*)&texinfo->tpage);
+  idx = TextureCachedPageIdx(texinfo->tpage);
   if (idx == -1) { return -1; }
   hash = texinfo->rgninfo.color_mode<<12|texinfo->rgninfo.segment<<10
         |texinfo->rgninfo.offs_x<<5|texinfo->rgninfo.offs_y;
@@ -640,14 +764,34 @@ static int TextureLookup(texinfo *texinfo, fvec(*uvs)[4]) {
 int TextureLoad(texinfo *texinfo, fvec(*uvs)[4]) {
   int idx, texid;
 
-  idx = TexturePageIdx((entry_ref*)&texinfo->tpage);
-  if (idx == -1) return -1;
-  /* A mid-frame page replacement is retired safely at the next frame start. */
-  if (cache.eids[idx] != texture_pages[TEX_TPAGE_FIRST + idx].eid)
-    return -1;
+  cache.frame_requests++;
   texid = TextureLookup(texinfo, uvs);
-  if (texid != -1) return texid;
+  if (texid != -1) {
+    cache.frame_hits++;
+    return texid;
+  }
+  cache.frame_misses++;
+  cache.total_misses++;
+  idx = TexturePageIdx(texinfo->tpage);
+  if (idx == -1) {
+    cache.frame_failures++;
+    cache.frame_missing_pages++;
+    cache.total_failures++;
+    return -1;
+  }
+  /* A mid-frame page replacement is retired safely at the next frame start. */
+  if (cache.eids[idx] != texture_pages[TEX_TPAGE_FIRST + idx].eid) {
+    cache.frame_failures++;
+    cache.frame_generation_misses++;
+    cache.total_failures++;
+    return -1;
+  }
   texid = TextureNew(texinfo, uvs);
+  if (texid == -1) {
+    cache.frame_failures++;
+    cache.frame_cache_failures++;
+    cache.total_failures++;
+  }
   return texid;
 }
 

@@ -285,6 +285,8 @@ extern nsd_pte *NSProbe(eid_t eid);
 // extern nsd_pte *NSProbeSafe(eid_t eid); /* proto only */
 // extern entry *NSResolve(nsd_pte *pte); /* proto only */
 extern entry *NSLookup(void *ref);
+extern int NSLevelMetadataValid(const void *data, size_t size, lid_t lid);
+extern int NSLevelPageDataSizeValid(size_t size, uint32_t page_count);
 extern void NSInit(ns_struct *nss, uint32_t lid);
 extern int NSKill(ns_struct *nss);
 extern void NSKillPage(ns_struct *nss, int idx);

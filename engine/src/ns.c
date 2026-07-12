@@ -250,6 +250,97 @@ static uint8_t *NSFileRead(char *filename, size_t *size) {
   return NSFileReadRange(filename, 0, -1, size);
 }
 
+/* The retail level NSD header occupies 0x520 bytes before its 8-byte PTEs.
+ * Some disc streams, notably LID_CAVE, are index-only asset archives using
+ * the older 0x408-byte header and therefore have no LDAT to boot. */
+#define NSD_DISK_PAGE_COUNT_OFFSET      0x400u
+#define NSD_DISK_PAGE_TABLE_SIZE_OFFSET 0x404u
+#define NSD_DISK_HAS_LOADING_IMAGE_OFFSET 0x40Cu
+#define NSD_DISK_LOADING_IMAGE_WIDTH_OFFSET 0x410u
+#define NSD_DISK_LOADING_IMAGE_HEIGHT_OFFSET 0x414u
+#define NSD_DISK_PAGE_TABLE_OFFSET      0x520u
+#define NSD_DISK_PTE_SIZE               8u
+#define NSD_DISK_BUCKET_COUNT           256u
+#define NSD_LOADING_IMAGE_PALETTE_SIZE  512u
+#define NSD_LOADING_IMAGE_MAX_WIDTH     512u
+#define NSD_LOADING_IMAGE_MAX_HEIGHT    240u
+
+int NSLevelMetadataValid(const void *data, size_t size, lid_t lid) {
+  const uint8_t *bytes = (const uint8_t*)data;
+  uint32_t page_count, page_table_size, bucket_offset, pte_value;
+  uint32_t magic, metadata_lid;
+  uint32_t has_loading_image, loading_image_width, loading_image_height;
+  size_t loading_image_pixels;
+  size_t ldat_offset;
+  uint32_t i;
+
+  if (!bytes || size < NSD_DISK_PAGE_TABLE_OFFSET)
+    return 0;
+  memcpy(&page_count, bytes + NSD_DISK_PAGE_COUNT_OFFSET,
+    sizeof(page_count));
+  memcpy(&page_table_size, bytes + NSD_DISK_PAGE_TABLE_SIZE_OFFSET,
+    sizeof(page_table_size));
+  if (!page_count || page_count > NS_PHYSICAL_PAGE_COUNT || !page_table_size)
+    return 0;
+  if ((size_t)page_table_size
+      > (SIZE_MAX - NSD_DISK_PAGE_TABLE_OFFSET) / NSD_DISK_PTE_SIZE)
+    return 0;
+  ldat_offset = NSD_DISK_PAGE_TABLE_OFFSET
+              + (size_t)page_table_size * NSD_DISK_PTE_SIZE;
+  if (ldat_offset > size
+   || size - ldat_offset < offsetof(nsd_ldat, image_data))
+    return 0;
+  for (i=0;i<NSD_DISK_BUCKET_COUNT;i++) {
+    memcpy(&bucket_offset, bytes + (size_t)i * sizeof(bucket_offset),
+      sizeof(bucket_offset));
+    if (bucket_offset >= page_table_size)
+      return 0;
+  }
+  for (i=0;i<page_table_size;i++) {
+    memcpy(&pte_value,
+      bytes + NSD_DISK_PAGE_TABLE_OFFSET + (size_t)i * NSD_DISK_PTE_SIZE,
+      sizeof(pte_value));
+    /* Every retail on-disk PTE is an unresolved odd pgid.  Resolved pointers
+     * and runtime tag values are only valid after NS has loaded the file. */
+    if (!(pte_value & 1) || (pte_value >> 1) >= page_count)
+      return 0;
+  }
+  memcpy(&magic, bytes + ldat_offset + offsetof(nsd_ldat, magic),
+    sizeof(magic));
+  memcpy(&metadata_lid, bytes + ldat_offset + offsetof(nsd_ldat, lid),
+    sizeof(metadata_lid));
+  if (magic != MAGIC_LDAT || metadata_lid != (uint32_t)lid)
+    return 0;
+
+  memcpy(&has_loading_image, bytes + NSD_DISK_HAS_LOADING_IMAGE_OFFSET,
+    sizeof(has_loading_image));
+  if (!has_loading_image)
+    return 1;
+  memcpy(&loading_image_width, bytes + NSD_DISK_LOADING_IMAGE_WIDTH_OFFSET,
+    sizeof(loading_image_width));
+  memcpy(&loading_image_height, bytes + NSD_DISK_LOADING_IMAGE_HEIGHT_OFFSET,
+    sizeof(loading_image_height));
+  if (!loading_image_width || !loading_image_height
+   || loading_image_width > NSD_LOADING_IMAGE_MAX_WIDTH
+   || loading_image_height > NSD_LOADING_IMAGE_MAX_HEIGHT)
+    return 0;
+  loading_image_pixels = (size_t)loading_image_width * loading_image_height;
+  if (loading_image_pixels
+      > sizeof(((nsd_ldat*)0)->image_data) - NSD_LOADING_IMAGE_PALETTE_SIZE)
+    return 0;
+  return size - ldat_offset >= sizeof(nsd_ldat);
+}
+
+int NSLevelPageDataSizeValid(size_t size, uint32_t page_count) {
+  size_t expected;
+
+  if (!page_count || page_count > NS_PHYSICAL_PAGE_COUNT
+   || (size_t)page_count > SIZE_MAX / PAGE_SIZE)
+    return 0;
+  expected = (size_t)page_count * PAGE_SIZE;
+  return size == expected;
+}
+
 int NSCountEntries(ns_struct *nss, int type) {
   nsd *nsd;
   nsd_pte *pte;
@@ -784,15 +875,26 @@ int NSTexturePageAllocate() {
 //----- (80014514) --------------------------------------------------------
 int NSTexturePageFree(int idx) {
   page_struct *ps;
+#ifndef PSX
+  page_struct *source;
+#endif
 
   ps = &texture_pages[idx];
   if (ps->state == 20) {
-    ps->pte->pgid = ps->pgid;
 #ifdef PSX
+    ps->pte->pgid = ps->pgid;
     ns.page_map[ps->pgid >> 1] = (page_struct*)NULL_PAGE;
 #else
-    /* page contents are kept in memory on pc,
-       so keep the ps for the tpage data */
+    /*
+     * PC keeps every NSF page in memory.  Re-arm the original, already
+     * translated physical page when a VRAM texture slot is evicted.  Leaving
+     * the PTE resolved to tpagemem made a later NSOpen look successful even
+     * though that slot had since been overwritten by another texture page.
+     */
+    source = &ns.physical_pages[ps->pgid >> 1];
+    ps->pte->pgid = ps->pgid;
+    source->state = 4;
+    ns.page_map[ps->pgid >> 1] = source;
 #endif
     ps->state = 1;
   }
@@ -1364,7 +1466,7 @@ void NSInit(ns_struct *nss, uint32_t lid) {
   page *pagemem;
   nsd_pte *pte, **buckets;
   page_struct *ps;
-  size_t pagemem_size;
+  size_t nsd_size, pagemem_size;
   char *nsf_filename, *nsd_filename;
   char filename[0x100];
   int i, idx, page_count, hash;
@@ -1382,9 +1484,18 @@ void NSInit(ns_struct *nss, uint32_t lid) {
   nss->level_update_pending = 1;
   nsd_filename = NSGetFilename(0, lid);
   strcpy(filename, nsd_filename);
-  nsd = (struct _nsd*)NSFileRead(filename, 0);
+  nsd = (struct _nsd*)NSFileRead(filename, &nsd_size);
   if (!nsd || ISERRORCODE(nsd)) {
     fprintf(stderr, "Failed to load level %02x metadata.\n", lid);
+    done = 1;
+    return;
+  }
+  if (!NSLevelMetadataValid(nsd, nsd_size, lid)) {
+    fprintf(stderr,
+      "Level %02x metadata is invalid or not a playable level.\n", lid);
+    free(nsd);
+    nss->nsd = 0;
+    nss->ldat = 0;
     done = 1;
     return;
   }
@@ -1433,6 +1544,18 @@ void NSInit(ns_struct *nss, uint32_t lid) {
     free(nss->nsd);
     nss->page_map = 0;
     nss->nsd = 0;
+    nss->inited = 0;
+    return;
+  }
+  if (!NSLevelPageDataSizeValid(pagemem_size, physical_page_count)) {
+    fprintf(stderr, "Invalid level %02x page data size.\n", lid);
+    done = 1;
+    free(pagemem);
+    free(nss->page_map);
+    free(nss->nsd);
+    nss->page_map = 0;
+    nss->nsd = 0;
+    nss->ldat = 0;
     nss->inited = 0;
     return;
   }

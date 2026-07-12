@@ -33,10 +33,9 @@ static inline void PadUpdatePbak(pad *pad) {
   uint32_t held, arg;
   int count, finished;
 
-  if (pad_lock == 2) {
+  if (pbak_state == 2) {
     count = cur_pbak_header ? cur_pbak_header->frame_count : 0;
     if (!cur_pbak_header || count <= 0 || !cur_pbak_frame) {
-      pad_lock = 0;
       pbak_state = 0;
       return;
     }
@@ -53,13 +52,13 @@ static inline void PadUpdatePbak(pad *pad) {
       if (island_cam_rot_x) {
         arg = 0;
         GoolSendEvent(0, caption_obj, 0xE00, 1, &arg);
-        pad_lock = 3;
+        pbak_state = 3;
       }
       else
-        pad_lock = 0;
+        pbak_state = 0;
     }
   }
-  else if (pad_lock == 3)
+  else if (pbak_state == 3)
     pad->held = 0;
 }
 

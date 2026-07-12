@@ -15,6 +15,7 @@ extern void TransStopAtSolid(gool_object *obj,
 extern int BinfInit();
 extern int BinfKill();
 extern void PlotWalls(vec *next_trans, gool_object *obj, zone_query *query);
+extern int SolidReplotWalls(int op, int flags, vec *next_trans, gool_object *obj);
 extern int StopAtWalls(vec *trans, int x, int z, int *adj_x, int *adj_z,
 	gool_object *obj, int ret);
 

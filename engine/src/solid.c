@@ -310,7 +310,7 @@ static int StopAtHighestObjectBelow(gool_object *obj, vec *trans, vec *next_tran
       if ((!(obj->process.state_flags & GOOL_FLAG_FLING_STATE)
        && obj->process.invincibility_state != 5)
        || header->category != 0x300
-       || ((bound->obj->process.status_c & 0x1012) && !(bound->obj->process.state_flags & 10020)))
+       || ((bound->obj->process.status_c & 0x1012) && !(bound->obj->process.state_flags & 0x10020)))
         max_y = bound->bound.p2.y + 1;
     }
   }
@@ -687,10 +687,10 @@ static void PlotObjWalls(vec *next_trans, gool_object *obj, zone_query *query, i
         dist_xz = sqrt((delta.x*delta.x)+(delta.z*delta.z)) << 8;
         if (dist_xz <= 0x19000) { continue; }
       }
-      x1 = ((node_bound.p1.x-next_trans->x)*4) >> 13;
-      z1 = ((node_bound.p1.z-next_trans->z)*4) >> 13;
-      x2 = ((node_bound.p2.x-next_trans->x)*4) >> 13;
-      z2 = ((node_bound.p2.z-next_trans->z)*4) >> 13;
+      x1 = shr_floor((node_bound.p1.x-next_trans->x)*4, 13);
+      z1 = shr_floor((node_bound.p1.z-next_trans->z)*4, 13);
+      x2 = shr_floor((node_bound.p2.x-next_trans->x)*4, 13);
+      z2 = shr_floor((node_bound.p2.z-next_trans->z)*4, 13);
       PlotWallB(x1, z1, x2, z2, 1);
       if (flag) {
         for (ii=x1;ii<x2;ii+=8)
@@ -741,7 +741,7 @@ static inline int TestWall(int x, int z) {
 }
 
 //----- (8002E0A0) --------------------------------------------------------
-static int ReplotWalls(int op, int flags, vec *next_trans, gool_object *obj) {
+int SolidReplotWalls(int op, int flags, vec *next_trans, gool_object *obj) {
   zone_query *query;
   zone_query_result *result;
   zone_query_result_rect *result_rect;
@@ -757,8 +757,7 @@ static int ReplotWalls(int op, int flags, vec *next_trans, gool_object *obj) {
   result_count = 0;
   query = &cur_zone_query;
   result = query->results;
-  for (i=0;i<query->result_count;i++) { /* while not done iterating results */
-    result = &query->results[i];
+  for (i=0;i<query->result_count;) { /* while not done iterating results */
     if (!result->is_node) {
       result_rect = (zone_query_result_rect*)result;
       zone_dim.w = result_rect->w << 8;
@@ -768,51 +767,52 @@ static int ReplotWalls(int op, int flags, vec *next_trans, gool_object *obj) {
       max_depth.y = result_rect->max_depth_y;
       max_depth.z = result_rect->max_depth_z;
       result += sizeof(zone_query_result_rect)/sizeof(zone_query_result);
-      result_count += 2;
+      i += sizeof(zone_query_result_rect)/sizeof(zone_query_result);
+      continue;
     }
-    else {
-      node = (result->node << 1) | 1;
-      level = result->level;
-      type = ((node & 0xE) >> 1) + 1;
-      if (type == 0 || type == 5
-        || (flags == 0 && type != 2)
-        || (flags == 1 && type == 2)) {
-        ++result;
-        continue;
-      }
-      node_rect.loc.y = result->y << 4; /* recover original scale */
-      node_rect.dim.h = zone_dim.h >> min(level, max_depth.y);
-      node_bound.p1.y = node_rect.loc.y + query->nodes_bound.p1.y; /* local bound to bound */
-      node_bound.p2.y = node_bound.p1.y + (int32_t)node_rect.dim.h;
-      dist.p1.y = node_bound.p1.y - next_trans->y;
-      dist.p2.y = node_bound.p2.y - next_trans->y;
-      plot = ((flags == 0 && dist.p1.y<=(100<<8) && dist.p2.y>=-(400<<8)))
-           || (flags == 1 && dist.p2.y>=0)
-           || (flags != 0 && flags != 1);
-      if (!plot) {
-        ++result;
-        continue;
-      }
-      node_rect.loc.x = result->x << 4;
-      node_rect.loc.z = result->z << 4;
-      node_rect.dim.w = zone_dim.w >> min(level, max_depth.x);
-      node_rect.dim.d = zone_dim.d >> min(level, max_depth.z);
-      node_bound.p1.x = node_rect.loc.x + query->nodes_bound.p1.x;
-      node_bound.p1.z = node_rect.loc.z + query->nodes_bound.p1.z;
-      node_bound.p2.x = node_bound.p1.x + (int32_t)node_rect.dim.w;
-      node_bound.p2.z = node_bound.p1.z + (int32_t)node_rect.dim.d;
-      dist.p1.x = node_bound.p1.x - next_trans->x;
-      dist.p2.x = node_bound.p2.x - next_trans->x;
-      dist.p1.z = node_bound.p1.z - next_trans->z;
-      dist.p2.z = node_bound.p2.z - next_trans->z;
-      x1 = (dist.p1.x*4) >> 13;
-      z1 = (dist.p1.z*4) >> 13;
-      x2 = (dist.p2.x*4) >> 13;
-      z2 = (dist.p2.z*4) >> 13;
-      PlotWallB(x1, z1, x2, z2, 1);
+    node = (result->node << 1) | 1;
+    level = result->level;
+    type = ((node & 0xE) >> 1) + 1;
+    i++;
+    if (type == 0 || type == 5
+      || (flags == 0 && type != 2)
+      || (flags == 1 && type == 2)) {
       ++result;
-      ++result_count;
+      continue;
     }
+    node_rect.loc.y = (int32_t)result->y * 16; /* recover original scale */
+    node_rect.dim.h = zone_dim.h >> min(level, max_depth.y);
+    node_bound.p1.y = node_rect.loc.y + query->nodes_bound.p1.y; /* local bound to bound */
+    node_bound.p2.y = node_bound.p1.y + (int32_t)node_rect.dim.h;
+    dist.p1.y = node_bound.p1.y - next_trans->y;
+    dist.p2.y = node_bound.p2.y - next_trans->y;
+    plot = ((flags == 0 && dist.p1.y<=(100<<8) && dist.p2.y>=-(400<<8)))
+         || (flags == 1 && dist.p2.y>=0)
+         || (flags != 0 && flags != 1);
+    if (!plot) {
+      ++result;
+      continue;
+    }
+    node_rect.loc.x = (int32_t)result->x * 16;
+    node_rect.loc.z = (int32_t)result->z * 16;
+    node_rect.dim.w = zone_dim.w >> min(level, max_depth.x);
+    node_rect.dim.d = zone_dim.d >> min(level, max_depth.z);
+    node_bound.p1.x = node_rect.loc.x + query->nodes_bound.p1.x;
+    node_bound.p1.z = node_rect.loc.z + query->nodes_bound.p1.z;
+    node_bound.p2.x = node_bound.p1.x + (int32_t)node_rect.dim.w;
+    node_bound.p2.z = node_bound.p1.z + (int32_t)node_rect.dim.d;
+    dist.p1.x = node_bound.p1.x - next_trans->x;
+    dist.p2.x = node_bound.p2.x - next_trans->x;
+    dist.p1.z = node_bound.p1.z - next_trans->z;
+    dist.p2.z = node_bound.p2.z - next_trans->z;
+    x1 = shr_floor(dist.p1.x*4, 13);
+    z1 = shr_floor(dist.p1.z*4, 13);
+    x2 = shr_floor(dist.p2.x*4, 13);
+    z2 = shr_floor(dist.p2.z*4, 13);
+    PlotWallB(x1, z1, x2, z2, op);
+    /* Retail counts only nodes that survive the filters and are replotted. */
+    result_count++;
+    ++result;
   }
   return result_count;
 }
@@ -903,8 +903,8 @@ int StopAtWalls(vec *trans, int x, int z, int *adj_x, int *adj_z, gool_object *o
     if (obj->process.gool_links.collider)
       collider_header = (gool_header*)obj->process.gool_links.collider->global->items[0];
     if (!obj->process.gool_links.collider || collider_header->type != 0x22) { /* no collider or its a non-box? */
-      if (ReplotWalls(0, 0, trans, obj)) {
-        ReplotWalls(1, 1, trans, obj);
+      if (SolidReplotWalls(0, 0, trans, obj)) {
+        SolidReplotWalls(1, 1, trans, obj);
         PlotObjWalls(trans, obj, &cur_zone_query, 0);
       }
       return StopAtWalls(trans, x, z, adj_x, adj_z, obj, 0x100);
@@ -1040,9 +1040,9 @@ void PlotQueryWalls(
     level = result->level;
     type = (node & 0xE) >> 1;
     subtype = (node & 0x3F0) >> 4;
-    nbound.p1.x = ((int32_t)result->x << 4) + nodes_bound->p1.x; // t6
-    nbound.p1.y = ((int32_t)result->y << 4) + nodes_bound->p1.y; // t7
-    nbound.p1.z = ((int32_t)result->z << 4) + nodes_bound->p1.z; // s0
+    nbound.p1.x = ((int32_t)result->x * 16) + nodes_bound->p1.x; // t6
+    nbound.p1.y = ((int32_t)result->y * 16) + nodes_bound->p1.y; // t7
+    nbound.p1.z = ((int32_t)result->z * 16) + nodes_bound->p1.z; // s0
     nbound.p2.x = nbound.p1.x + (int32_t)(zone_dim.w >> min(level, max_depth.x)); // s1
     nbound.p2.y = nbound.p1.y + (int32_t)(zone_dim.h >> min(level, max_depth.y)); // s2
     nbound.p2.z = nbound.p1.z + (int32_t)(zone_dim.d >> min(level, max_depth.z)); // s3
@@ -1058,10 +1058,10 @@ void PlotQueryWalls(
     }
     else
       continue;
-    nbound.p1.x = (int)((nbound.p1.x - trans_x) << 2) >> 13;
-    nbound.p2.x = (int)((nbound.p2.x - trans_x) << 2) >> 13;
-    nbound.p1.z = (int)((nbound.p1.z - trans_z) << 2) >> 13;
-    nbound.p2.z = (int)((nbound.p2.z - trans_z) << 2) >> 13;
+    nbound.p1.x = shr_floor((nbound.p1.x - trans_x)*4, 13);
+    nbound.p2.x = shr_floor((nbound.p2.x - trans_x)*4, 13);
+    nbound.p1.z = shr_floor((nbound.p1.z - trans_z)*4, 13);
+    nbound.p2.z = shr_floor((nbound.p2.z - trans_z)*4, 13);
     if (-32 < nbound.p1.z && nbound.p1.z < 32) {
       for (ii=nbound.p1.x;ii<nbound.p2.x;ii+=8) {
         PlotWall(ii, nbound.p1.z);
@@ -1160,9 +1160,9 @@ void FindFloorY(
     level = result->level;
     type = (node & 0xE) >> 1;
     subtype = (node & 0x3F0) >> 4;
-    nbound.p1.x = ((int32_t)result->x << 4) + nodes_bound->p1.x;
-    nbound.p1.y = ((int32_t)result->y << 4) + nodes_bound->p1.y;
-    nbound.p1.z = ((int32_t)result->z << 4) + nodes_bound->p1.z;
+    nbound.p1.x = ((int32_t)result->x * 16) + nodes_bound->p1.x;
+    nbound.p1.y = ((int32_t)result->y * 16) + nodes_bound->p1.y;
+    nbound.p1.z = ((int32_t)result->z * 16) + nodes_bound->p1.z;
     ++result;
     if (collider_bound->p2.x < nbound.p1.x
       || collider_bound->p2.y < nbound.p1.y
@@ -1235,11 +1235,11 @@ int FindCeilY(
     level = result->level;
     type = (node & 0xE) >> 1;
     subtype = (node & 0x3F0) >> 4;
-    if (type != (type_a-1) || type != (type_b-1)) { continue; }
-    nbound.p1.x = (result->x << 4) + nodes_bound->p1.x;
-    nbound.p1.y = (result->y << 4) + nodes_bound->p1.y;
-    nbound.p1.z = (result->z << 4) + nodes_bound->p1.z;
+    nbound.p1.x = ((int32_t)result->x * 16) + nodes_bound->p1.x;
+    nbound.p1.y = ((int32_t)result->y * 16) + nodes_bound->p1.y;
+    nbound.p1.z = ((int32_t)result->z * 16) + nodes_bound->p1.z;
     ++result;
+    if (type != (type_a-1) && type != (type_b-1)) { continue; }
     if (collider_bound->p2.x < nbound.p1.x
       || collider_bound->p2.y < nbound.p1.y
       || collider_bound->p2.z < nbound.p1.z)
@@ -1249,7 +1249,7 @@ int FindCeilY(
     nbound.p2.z = nbound.p1.z + (int32_t)(zone_dim.d >> min(level, max_depth.z));
     if (nbound.p2.x < collider_bound->p1.x
       || nbound.p2.y < collider_bound->p1.y
-      || nbound.p2.z < collider_bound->p2.z)
+      || nbound.p2.z < collider_bound->p1.z)
       continue;
     count += 1;
     sum_y1 += nbound.p1.y;

@@ -94,6 +94,9 @@ extern eid_t crash_eid;
 extern gool_handle handles[8];
 extern int bonus_return;
 extern level_state savestate;
+extern rgb8 vram_fill_color, next_vram_fill_color;
+extern gool_vectors cam;
+extern int32_t dcam_rot_y1, dcam_angvel2;
 
 #ifdef CFLAGS_DRAW_EXTENSIONS
 extern zone_query cur_zone_query;
@@ -114,6 +117,7 @@ void CoreFrame(void);
 static double browser_next_frame_ms;
 static uint32_t browser_last_frame_us;
 static uint32_t browser_max_frame_us;
+static int browser_debug_frame_paused;
 
 EMSCRIPTEN_KEEPALIVE uint32_t C1GetLastFrameUs(void) {
   return browser_last_frame_us;
@@ -123,14 +127,85 @@ EMSCRIPTEN_KEEPALIVE uint32_t C1GetMaxFrameUs(void) {
   return browser_max_frame_us;
 }
 
+EMSCRIPTEN_KEEPALIVE void C1SetDebugFramePaused(int paused) {
+  browser_debug_frame_paused = paused != 0;
+}
+
+EMSCRIPTEN_KEEPALIVE int C1DebugCrashEvent(int event) {
+  uint32_t arg = 0x6400;
+  if (!crash) return 0;
+  return GoolSendEvent(0, crash, event, 1, &arg);
+}
+
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetGameState(void) { return game_state; }
+EMSCRIPTEN_KEEPALIVE int C1GetLifeCount(void) { return life_count; }
+EMSCRIPTEN_KEEPALIVE int C1GetDeathCount(void) { return death_count; }
+EMSCRIPTEN_KEEPALIVE int C1GetRespawnCount(void) { return respawn_count; }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetDisplayFlags(void) { return cur_display_flags; }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetNextDisplayFlags(void) { return next_display_flags; }
+EMSCRIPTEN_KEEPALIVE int C1GetFadeCounter(void) { return fade_counter; }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetVramFillRgb(void) {
+  return ((uint32_t)vram_fill_color.r << 16)
+       | ((uint32_t)vram_fill_color.g << 8)
+       | vram_fill_color.b;
+}
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetNextVramFillRgb(void) {
+  return ((uint32_t)next_vram_fill_color.r << 16)
+       | ((uint32_t)next_vram_fill_color.g << 8)
+       | next_vram_fill_color.b;
+}
+EMSCRIPTEN_KEEPALIVE int C1GetCamX(void) { return cam.trans.x; }
+EMSCRIPTEN_KEEPALIVE int C1GetCamY(void) { return cam.trans.y; }
+EMSCRIPTEN_KEEPALIVE int C1GetCamZ(void) { return cam.trans.z; }
+EMSCRIPTEN_KEEPALIVE int C1GetCamRotX(void) { return cam.rot.x; }
+EMSCRIPTEN_KEEPALIVE int C1GetCamRotY(void) { return cam.rot.y; }
+EMSCRIPTEN_KEEPALIVE int C1GetDeathCamOrbit(void) { return dcam_rot_y1; }
+EMSCRIPTEN_KEEPALIVE int C1GetDeathCamFlipVelocity(void) { return dcam_angvel2; }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureFrameRequests(void) { return TextureFrameRequestCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureFrameHits(void) { return TextureFrameHitCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureFrameMisses(void) { return TextureFrameMissCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureFrameFailures(void) { return TextureFrameFailureCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureFrameMissingPages(void) { return TextureFrameMissingPageCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureFrameGenerationMisses(void) { return TextureFrameGenerationMissCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureFrameCacheFailures(void) { return TextureFrameCacheFailureCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureFramePageChanges(void) { return TextureFramePageChangeCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureTotalMisses(void) { return TextureTotalMissCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureTotalFailures(void) { return TextureTotalFailureCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureTotalPageChanges(void) { return TextureTotalPageChangeCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureFrameUploadBytes(void) { return TextureFrameUploadBytes(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetTextureTotalUploadBytes(void) { return TextureTotalUploadBytes(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetPrimitiveBytes(void) { return GLPrimitiveBytes(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetMaxPrimitiveBytes(void) { return GLMaxPrimitiveBytes(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetPrimitiveOverflowCount(void) { return GLPrimitiveOverflowCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetWorldPrimitiveCount(void) { return SwWorldPrimitiveCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetConvertedTriangleCount(void) { return GLConvertedTriangleCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetLargestTriangleArea2(void) { return GLFrameLargestTriangleArea2(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetLargestTriangleIndex(void) { return GLFrameLargestTriangleIndex(); }
+EMSCRIPTEN_KEEPALIVE int32_t C1GetLargestTriangleX(int vertex) { return GLFrameLargestTriangleX(vertex); }
+EMSCRIPTEN_KEEPALIVE int32_t C1GetLargestTriangleY(int vertex) { return GLFrameLargestTriangleY(vertex); }
+EMSCRIPTEN_KEEPALIVE int C1GetLargestTriangleTexid(void) { return GLFrameLargestTriangleTexid(); }
+EMSCRIPTEN_KEEPALIVE int C1GetLargestTriangleFlags(void) { return GLFrameLargestTriangleFlags(); }
+EMSCRIPTEN_KEEPALIVE int C1GetLargestTriangleType(void) { return GLFrameLargestTriangleType(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetOutsideTriangleCount(void) { return GLFrameOutsideTriangleCount(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetVisiblePolyCount(void) {
+  return cur_poly_ids ? (uint32_t)cur_poly_ids->len : 0;
+}
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetGlError(void) { return GLLastError(); }
+EMSCRIPTEN_KEEPALIVE uint32_t C1GetGlErrorCount(void) { return GLTotalErrorCount(); }
+EMSCRIPTEN_KEEPALIVE int C1GetDrawSkipCounter(void) { return ns.draw_skip_counter; }
+
 static void CoreBrowserFrame(void) {
   const double frame_ms = 1000.0 / 30.0;
   double start, now = emscripten_get_now();
 
+  if (browser_debug_frame_paused) {
+    return;
+  }
   if (browser_next_frame_ms == 0.0)
     browser_next_frame_ms = now;
-  if (now + 0.25 < browser_next_frame_ms)
+  if (now + 0.25 < browser_next_frame_ms) {
     return;
+  }
   start = now;
   CoreFrame();
   browser_last_frame_us = (uint32_t)((emscripten_get_now() - start) * 1000.0);
@@ -303,7 +378,6 @@ void CoreFrame(void) {
     NSUpdate(-1);
 #endif
     LevelSpawnObjects();
-    TexturesBeginFrame();
     if (!paused) {
       header = (zone_header*)cur_zone->items[0];
       if (header->gfx.flags & (ZONE_FLAG_DARK2 | ZONE_FLAG_LIGHTNING))
@@ -314,6 +388,12 @@ void CoreFrame(void) {
       /* if (!globals->paused) ???*/
       CamUpdate();
     }
+    /*
+     * CamUpdate can cross a zone boundary and replace physical texture pages.
+     * Snapshot page generations only after that work, immediately before any
+     * world or object primitive asks the texture cache for UVs.
+     */
+    TexturesBeginFrame();
     GfxUpdateMatrices();
     ot = context.ot;
     header = (zone_header*)cur_zone->items[0];
@@ -346,6 +426,7 @@ void CoreFrame(void) {
     if (draw_objbounds)
       SwTransformObjectBounds(object_bounds, object_bound_count, ot, GLGetPrimsTail());
 #endif
+    GLBeginFrame();
     GLClear();
     if (ns.ldat->lid == LID_TITLE) { TitleUpdate(ot); }
     GLUpdate();
@@ -364,6 +445,7 @@ void CoreLoop(lid_t lid) {
 #endif /* GOD_MODE */
 #ifdef __EMSCRIPTEN__
   browser_next_frame_ms = 0.0;
+  browser_debug_frame_paused = 0;
   browser_last_frame_us = browser_max_frame_us = 0;
   emscripten_set_main_loop(CoreBrowserFrame, 0, 1);
 #else

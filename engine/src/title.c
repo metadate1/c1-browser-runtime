@@ -25,7 +25,9 @@ int title_once = 1;                            /* 80056500; gp[0x41] */
 int title_not_seen;                            /* 80056678; gp[0x9F] */
 title_struct *title;                           /* 800566E0; gp[0xB9] */
 uint8_t image[512*256*2];
-uint32_t image_cvt[512*240];
+#define TITLE_IMAGE_MAX_W 512
+#define TITLE_IMAGE_MAX_H 240
+uint32_t image_cvt[TITLE_IMAGE_MAX_W*TITLE_IMAGE_MAX_H];
 uint16_t *cluts[480];
 
 extern ns_struct ns;
@@ -271,8 +273,14 @@ int TitleLoading(lid_t lid, uint8_t *image_data, nsd *nsd) {
   rect2 rect;
   int32_t x, y;
   uint32_t w, h;
+#ifdef PSX
   uint8_t *buf;
-  uint16_t *palette, *src, *dst;
+#endif
+  uint8_t *src;
+  uint16_t *palette;
+#ifdef PSX
+  uint16_t *dst;
+#endif
   int i,j,k,l;
 
   if (!nsd->has_loading_image || !nsd->loading_image_width || !nsd->loading_image_height)
@@ -285,12 +293,14 @@ int TitleLoading(lid_t lid, uint8_t *image_data, nsd *nsd) {
     return SUCCESS;
   w = nsd->loading_image_width;
   h = nsd->loading_image_height;
-  buf = malloc(0x4000);
 #ifdef PSX
+  buf = malloc(0x4000);
+  if (!buf)
+    return ERROR_MALLOC_FAILED;
   DrawSync(0);
   for (i=0;i<2;i++) {
     palette = (uint16_t*)&image_data[0];
-    src = (uint16_t*)&image_data[512]; /* skip palette */
+    src = &image_data[512]; /* skip the 256-entry 16-bit palette */
     dst = (uint16_t*)buf;
     GpuFillDisplay();
     x = context.c2_p->draw.clip.x - (w/2) - 256;
@@ -312,16 +322,26 @@ int TitleLoading(lid_t lid, uint8_t *image_data, nsd *nsd) {
   }
 #else
   palette = (uint16_t*)&image_data[0];
-  src = (uint16_t*)&image_data[512]; /* skip palette */
-  dst = (uint16_t*)image_cvt;
-  rect.x = context.draw_clip.x - (w/2) - 256;
-  rect.y = context.draw_clip.y - (h/2) + 108;
+  src = &image_data[512]; /* one 8-bit palette index per pixel */
+  if (w > TITLE_IMAGE_MAX_W || h > TITLE_IMAGE_MAX_H
+   || (size_t)w * h > arr_len(image_cvt)) {
+    fprintf(stderr, "Invalid loading image dimensions: %ux%u.\n", w, h);
+    return ERROR_INVALID_REF;
+  }
+  dim.w = w;
+  dim.h = h;
+  TextureCopy(src, (uint8_t*)image_cvt, &dim, &dim,
+    0, 0, palette, 2, 1, 3);
   rect.w = w; rect.h = h;
   //TextureCopy((uint8_t*)src, (uint8_t*)dst, &rect.dim, 0, 0, 0, palette, 2, 2, 3);
-  GLDrawImage(&rect.dim, (uint8_t*)image_cvt, &rect.loc);
+  /* GL uses screen-centered coordinates; the PSX branch's VRAM offsets do
+   * not apply here. */
+  GLDrawImage(&rect.dim, (uint8_t*)image_cvt, 0);
 #endif
   ns.draw_skip_counter = 2;
+#ifdef PSX
   free(buf);
+#endif
   return SUCCESS;
 }
 
@@ -621,7 +641,7 @@ void TitleLoadEntries(int state, int flag, int count) {
   if (count > 0) {
     clut_idx = 0;
     line_idx = 0;
-    for (i=0;i<header->ipal_count;i++) {
+    for (i=0;i<header->ipal_count;) {
       ipal_idx = i / 120;
       if (header->ipals[ipal_idx] != EID_NONE)
         NSOpen(&header->ipals[ipal_idx], flag, count);

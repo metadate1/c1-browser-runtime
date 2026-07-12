@@ -54,6 +54,28 @@ extern int32_t cur_progress;
 extern pad pads[2];
 extern gool_object *crash;
 
+/* Select the path used while orbiting the world map. Retail prefers an exact
+ * goal, then a direction-compatible goal, and finally the first non-orbit
+ * fallback. Keeping this in one place also prevents the selected fallback
+ * index from being lost before ZoneGetNeighborPath is called. */
+int CamSelectIslandNeighbor(zone_path *path, int state) {
+  int selected = -1;
+  uint32_t i;
+
+  for (i=0;i<path->neighbor_path_count;i++) {
+    zone_neighbor_path neighbor = path->neighbor_paths[i];
+    if (neighbor.goal == state
+     || (selected == -1 && (path->neighbor_path_count == 1
+     || (neighbor.goal & 3) == (state & 3))))
+      selected = (int)i;
+  }
+  if (selected != -1) return selected;
+  for (i=0;i<path->neighbor_path_count;i++) {
+    if (!(path->neighbor_paths[i].goal & 4)) return (int)i;
+  }
+  return -1;
+}
+
 //----- (80029F6C) --------------------------------------------------------
 static void CamAdjustProgress(int32_t speed, cam_info *cam) {
   entry *next_zone;
@@ -168,7 +190,7 @@ static int CamGetProgress(vec *trans, zone_path *path, cam_info *cam, int flags,
 
 //----- (8002A3EC) --------------------------------------------------------
 static int CamGetProgress2(vec *trans, zone_path *path, cam_info *cam, int flags, int flag) {
-  vec trans_pt, rel_path, dot, adjust, v_dist;
+  vec trans_pt, rel_path, adjust, v_dist;
   entry *zone;
   zone_rect *rect;
   int32_t dist, dist_nearest;
@@ -271,7 +293,7 @@ static void CamFollow(gool_object *obj, uint32_t flag) {
   zone_header *header;
   zone_path *path, *n_path;
   zone_neighbor_path neighbor_path;
-  vec trans, cam_offset_new;
+  vec trans;
   int32_t progress, new_progress, old_progress;
   int32_t seek_pan, seek_zoom, new_pan, new_zoom, total_zoom;
   int32_t delta_dist, dist_exit, dist_nearest;
@@ -279,6 +301,7 @@ static void CamFollow(gool_object *obj, uint32_t flag) {
   uint32_t i, icam;
   int path_idx, flags, progress_made, same_dir, n_end;
 
+  (void)flag;
   flags = 0; // for shorter paths (< 50) both flags should set
   path_idx = cur_progress >> 8;
   header = (zone_header*)cur_zone->items[0];
@@ -483,7 +506,7 @@ int CamUpdate() {
   zone_neighbor_path neighbor_path;
   zone_path_point *point;
   int next_island_cam_state;
-  int cam_mode, skip, n_path_idx, pt_idx, neighbor_index;
+  int cam_mode, skip, n_path_idx, pt_idx;
   uint32_t i;
 
   if (!crash) { return 0; }
@@ -558,28 +581,13 @@ int CamUpdate() {
       }
       if (next_island_cam_state & 4) { n_progress = progress + 0x400; }
       else { n_progress = progress + 0x100; }
-      n_path_idx = -1;
       if (n_progress >= (path_s1->length << 8)) {
-        for (i=0;i<path_s1->neighbor_path_count;i++) {
-          neighbor_path = path_s1->neighbor_paths[i];
-          if (neighbor_path.goal == next_island_cam_state
-           || (n_path_idx == -1 && (path_s1->neighbor_path_count == 1
-           || (neighbor_path.goal & 3) == (next_island_cam_state & 3))))
-            n_path_idx = i;
-        }
-        neighbor_index = n_path_idx;
-        if (n_path_idx == -1) {
-          for (i = 0; i < path_s1->neighbor_path_count; i++) {
-            neighbor_path = path_s1->neighbor_paths[i];
-            if (!(neighbor_path.goal & 4)) {
-              neighbor_index = i;
-              break;
-            }
-          }
-        }
-        neighbor_path = path_s1->neighbor_paths[neighbor_index];
+        n_path_idx = CamSelectIslandNeighbor(path_s1, next_island_cam_state);
+        if (n_path_idx == -1) break;
+        neighbor_path = path_s1->neighbor_paths[n_path_idx];
         zone_s1 = path_s1->parent_zone;
         path_s1 = ZoneGetNeighborPath(zone_s1, path_s1, n_path_idx);
+        if (!path_s1) break;
         if (neighbor_path.goal & 1)
           n_progress = 0;
         else
@@ -671,7 +679,8 @@ int CamDeath(int *count) {
   tgeo = NSLookup(&frame->tgeo);
   /* get [unrotated] vertex in the current frame referenced by the gool object */
   vert = &frame->vertices[cam_spin_obj_vert >> 8];
-  t_header = (tgeo_header*)&tgeo->items[0];
+  /* items[0] points at the TGEO header; the item-table slot is not the data. */
+  t_header = (tgeo_header*)tgeo->items[0];
   u_vert.x = ((int8_t)(vert->x - 128) + frame->x) << 10; /* 10 bit frac to 20 bit frac */
   u_vert.y = ((int8_t)(vert->y - 128) + frame->y) << 10;
   u_vert.z = ((int8_t)(vert->z - 128) + frame->z) << 10;
@@ -707,7 +716,7 @@ int CamDeath(int *count) {
   /* rotate cam in yz plane towards the vertex */
   cam.rot.y = GoolObjectRotate(cam.rot.y, -ang_yz, dcam_angvel2, 0);
   if (cur_display_flags & GOOL_FLAG_SPIN_ACCEL) {
-    dcam_angvel2 += dcam_accel; /* accelerate?? no further usage of this value... */
+    dcam_rot_y1 += dcam_accel;
     cam.rot.x += dcam_accel; /* additional rotation??? */
   }
   /* move camera up towards the vertex */
