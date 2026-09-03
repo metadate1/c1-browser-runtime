@@ -1,27 +1,27 @@
 # Contributing
 
-Thanks for your interest in C1 Browser Runtime.
+Thank you for your interest in C1 Browser Runtime.
 
-## What is welcome
+## Reports that are welcome
 
-You may open an issue to report:
+You can open an issue for:
 
-- a reproducible bug;
-- an interoperability observation;
+- a repeatable bug;
+- an interoperability finding;
 - a documentation error;
-- a security concern that is safe to discuss publicly; or
-- a link to relevant public technical documentation.
+- a security concern that is safe to discuss in public; or
+- a link to useful public technical documents.
 
-Describe observations in your own words. Use small synthetic examples when possible.
+Write observations in your own words. Use small, synthetic examples when possible.
 
-## Code contributions are closed for now
+## Code contributions are closed
 
-Please do not open pull requests containing code, artwork, replay data, extracted game data, or
-other files. This repository is source-available, not open source, and the imported engine's
-licensing history is unresolved. Accepting outside code now would make ownership and licensing
-harder to track.
+Do not open a pull request with code, art, replay data, extracted game data, or other
+files. This repository is source-available, not open source. The imported engine also
+has an unresolved license history. Outside code would make source ownership and license
+review harder.
 
-If code contributions open later, the project will publish clear contribution terms first.
+If the project accepts code later, it will first publish clear contribution terms.
 
 ## Never post game data
 
@@ -30,12 +30,12 @@ Do not attach or paste:
 - a disc image, ROM, BIOS, or executable;
 - an NSD or NSF stream;
 - a retail screenshot or recording;
-- music, dialogue, a texture, model, or level;
-- a save state, card file, or replay; or
-- substantial unlicensed third-party source.
+- music, speech, a texture, model, or level;
+- a save state, memory-card file, or replay; or
+- a large part of unlicensed third-party source code.
 
-Link to public documentation instead of copying it into an issue. You are responsible for having
-the right to share anything you submit.
+Link to public documents instead of copying them into an issue. You must have the right
+to share all material that you submit.
 
-Report sensitive parser failures or possible data disclosure through the private process in
-[SECURITY.md](SECURITY.md).
+Use the private process in [SECURITY.md](SECURITY.md) to report a sensitive parser
+failure or possible data leak.

@@ -1,20 +1,23 @@
-# C1 browser runtime
+# C1 Browser Runtime
 
-This workspace compiles the public C1 engine lineage to WebAssembly, loads legally owned
-*Crash Bandicoot* disc data locally, and runs it in a browser with keyboard, gamepad, touch,
-fullscreen, SFX, and software-synthesized music support.
+C1 Browser Runtime builds the public C1 engine lineage as WebAssembly. It lets you use
+your own *Crash Bandicoot* disc data in a browser. It supports keyboards, gamepads,
+touch controls, full screen, sound effects, and software-made music.
 
-It is a source port, not a bundled ROM or emulator. No proprietary game data is included or
-uploaded.
+This project is a source port. It is not a ROM bundle or a PlayStation emulator. The
+repository has no proprietary game data. The browser does not upload the files that
+you select.
 
-> **Source and rights notice:** This repository is source-available research software, not open
-> source. It directly contains code derived from C1 repositories that have no express root
-> license. Read [LICENSE.md](LICENSE.md), [RIGHTS_AND_LICENSES.md](RIGHTS_AND_LICENSES.md), and
-> [NOTICE.md](NOTICE.md) before using or distributing it.
+> **Read this source and rights notice:** This repository is source-available research
+> software. It is not open source. Much of `engine/` comes from C1 repositories that
+> have no stated root license. Before you use or share this code, read
+> [LICENSE.md](LICENSE.md), [RIGHTS_AND_LICENSES.md](RIGHTS_AND_LICENSES.md), and
+> [NOTICE.md](NOTICE.md).
 
-## Run it
+## Run the project
 
-Requirements: macOS or Linux, Git, Node.js 20+, and roughly 2 GB free for the Emscripten SDK and build cache.
+You need macOS or Linux, Git, Node.js 20 or later, and about 2 GB of free space. The
+space is for the Emscripten SDK and the build cache.
 
 ```bash
 npm run setup
@@ -22,20 +25,29 @@ npm run build
 npm run dev
 ```
 
-Open [http://127.0.0.1:4173](http://127.0.0.1:4173). You can select either:
+Open [http://127.0.0.1:4173](http://127.0.0.1:4173). Then select one of these inputs:
 
-- a raw NTSC-U `.bin` disc image; the browser extracts the `S0`–`S3` streams locally, or
-- the extracted `.NSD`/`.NSF` files from the disc’s `S0`–`S3` directories.
+- a raw NTSC-U `.bin` disc image; the browser extracts the `S0` to `S3` streams in
+  memory; or
+- the `.NSD` and `.NSF` files that you extracted from the disc's `S0` to `S3`
+  directories.
 
-Select the title screen or any complete playable pair and press **Launch native build**. The retail disc contains 44 recognized stream pairs: 43 playable boot targets and the `0x04` Cave pair, which is an index-only asset archive used by other levels. Cave stays imported and mounted but is not offered as a standalone boot target. Partial sets can boot individual levels, but later transitions may stop when data is missing.
+Select the title screen or a complete playable pair. Then select **Launch native
+build**.
 
-If you prefer extracting once instead of selecting the BIN on each page load, run:
+The retail disc has 44 known stream pairs. Of these, 43 are playable boot targets. The
+`0x04` Cave pair is an index-only asset archive that other levels use. The runtime
+imports and mounts Cave, but does not list it as a separate boot target. A partial set
+can start one level. A later transition can stop if its data is missing.
+
+You can extract the streams once and reuse them:
 
 ```bash
 npm run extract -- "/path/to/Crash Bandicoot (USA).bin" ./local-data/streams
 ```
 
-Then choose the generated folder in the loader. `local-data/` and all recognized disc/stream formats are ignored by Git.
+Then select the new folder in the loader. Git ignores `local-data/` and all known disc
+and stream file types.
 
 ## Controls
 
@@ -50,57 +62,96 @@ Then choose the generated folder in the loader. `local-data/` and all recognized
 | L2 / R2 | `Q` / `W` | LT / RT |
 | Start / Select | `Enter` / `Space` | Start / Back |
 
-Touch controls appear automatically on coarse-pointer devices.
+Touch controls appear on devices with a coarse pointer.
 
-## Architecture
+## Project layout
 
-- `engine/` — C1 C engine, based on `mateusfavarin/c1` commit `408d6409` and the original `wurlyfox/c1` work.
-- `engine/src/pc/` — SDL2 platform layer, custom SFX mixer, TinySoundFont music, and fixed-function renderer.
-- `web/` — browser boot UI, local disc/stream importer, touch controls, and wasm host.
-- `scripts/` — pinned Emscripten setup, local server, and optional disc extraction tooling.
-- `dist/` — generated browser build; intentionally ignored by Git.
+- `engine/` contains the C1 C engine. It is based on `mateusfavarin/c1` commit
+  `408d6409` and earlier work in `wurlyfox/c1`.
+- `engine/src/pc/` contains the SDL2 platform code, the sound-effects mixer,
+  TinySoundFont music, and the fixed-function renderer.
+- `web/` contains the browser start page, local file importer, touch controls, and
+  Wasm host.
+- `scripts/` contains the fixed Emscripten setup, local server, and optional disc
+  extraction tools.
+- `dist/` contains the generated browser build. Git ignores this directory.
 
-The engine runs in wasm32 because C1 stores many pointers and tagged references in 32-bit fields. The browser main loop is cooperative at 30 Hz, SDL targets a canvas/WebGL context, and game files are mounted into Emscripten’s in-memory `/streams` filesystem before `main` starts.
+The engine uses wasm32 because C1 stores many pointers and tagged references in 32-bit
+fields. The browser runs a cooperative main loop at 30 Hz. SDL draws to a canvas with
+WebGL. Before the engine starts, the browser mounts game files in Emscripten's in-memory
+`/streams` file system.
 
-## Current compatibility truth
+## What works now
 
-The browser port is operational, but C1 is still an incomplete reimplementation of the retail executable. Current browser smoke tests cover full-disc import (88 streams / 44 recognized pairs, with 43 playable boot targets), publisher screens, the main menu, password/load/options states, direct level boot, keyboard input, audio, and returning between menus. Deterministic flow checks also cover the title's idle Intro sequence and N. Sanity Beach's transition into the missed-box Level Complete tally. The options screen renders all four entries and its volume, mono/stereo, and exit controls work.
+The browser port works, but C1 is still an incomplete version of the retail program.
+Current browser smoke tests cover these areas:
 
-The Cortex laboratory Intro is the first title-screen attract sequence in the retail flow: leave the main menu idle for about 30 seconds to play it. Pressing Start promptly goes directly to the world map.
+- full-disc import: 88 streams, 44 known pairs, and 43 playable boot targets;
+- publisher screens, the main menu, password, load, and options screens;
+- direct level start, keyboard input, audio, and menu returns;
+- the title screen's idle Intro sequence; and
+- N. Sanity Beach changing to the missed-box Level Complete screen.
 
-Browser persistence has two separate records. The retail 15-slot virtual memory card remains under `c1.virtual-memory-card.v1`, preserving its 128-byte payload and card-state handshake. A checksummed automatic resume snapshot lives under `c1.browser-resume.v1`; it captures progression and options about once per second and when the page is hidden or closed, then restores before the title flow starts. Malformed resume data is quarantined instead of overwriting a valid manual card.
+The options screen shows all four items. Its volume, mono/stereo, and exit controls
+work.
 
-Both records use origin-scoped `localStorage`, not cookies. Always open the same URL (`http://127.0.0.1:4173`) because `localhost`, another port, or another protocol has separate browser storage. Clearing this site’s data removes both manual and automatic progress. The supplied disc image and extracted streams are never stored in browser persistence, so they must be selected again after a refresh.
+The Cortex laboratory Intro is the first idle sequence from the title screen. Leave the
+main menu idle for about 30 seconds to see it. Press Start soon after the menu appears
+to go directly to the world map.
 
-This is not yet a claim of retail parity. A complete playthrough has not certified every level, boss, bonus room, death/checkpoint path, demo, ending, or long sequence of level transitions. Inherited camera, texture-cache, audio-mixing, and level-specific behavior can still differ from the PlayStation release.
+The browser keeps two separate progress records:
 
-“Fully functional” for this project means all of the following, which remain the continuing acceptance criteria:
+- `c1.virtual-memory-card.v1` is the retail 15-slot virtual memory card. It keeps each
+  128-byte payload and the card-state handshake.
+- `c1.browser-resume.v1` is a checksummed automatic resume record. It saves progression
+  and options about once per second. It also saves when the page becomes hidden or
+  closes. The runtime restores it before the title flow starts.
 
-1. Title, intro, map, password/load, options, completion, and ending flows work without hangs.
-2. Every retail level and bonus stage is completable with correct transitions and bosses.
-3. Music and SFX survive deaths, pauses, bonuses, and level changes.
-4. Keyboard, standard controllers, and touch all cover the complete pad.
-5. Save/password state persists in browser storage.
-6. A clean end-to-end playthrough passes against original-game reference captures.
+The runtime quarantines a malformed resume record. It does not use that record to
+replace a valid manual card.
 
-[`engine/doc/issues.md`](engine/doc/issues.md) is the historical upstream issue list, not a statement that every item still reproduces. Remaining parity work should be validated against the legally owned disc and original-game behavior, with regressions recorded as reproducible cases.
+Both records use origin-specific `localStorage`, not cookies. Always use the same URL.
+For example, `http://127.0.0.1:4173`, `localhost`, another port, and another protocol
+each have separate storage. If you clear site data, you delete both records. The
+browser never puts the disc image or extracted streams in persistent storage. You must
+select them again after a page refresh.
+
+This work does not yet prove retail parity. A complete test has not verified every
+level, boss, bonus room, death and checkpoint route, demo, ending, or long transition
+chain. Camera, texture-cache, audio-mixing, and level-specific behavior can still
+differ from the PlayStation game.
+
+For this project, **fully functional** means that all of these checks pass:
+
+1. Title, Intro, map, password, load, options, completion, and ending flows do not hang.
+2. Every retail level and bonus stage can finish with the correct transitions and bosses.
+3. Music and sound effects continue through deaths, pauses, bonuses, and level changes.
+4. Keyboard, standard gamepad, and touch controls provide the complete controller.
+5. Save and password state remains in browser storage.
+6. A clean end-to-end run matches captures from an original copy of the game.
+
+[`engine/doc/issues.md`](engine/doc/issues.md) is the old upstream issue list. It does
+not mean that every issue still occurs. Test remaining parity work against a legally
+owned disc and original-game behavior. Record regressions as repeatable cases.
 
 ## Legal boundary
 
-Game assets remain user-supplied and local. The source repository does not include a game disc,
-BIOS, executable, extracted stream, retail artwork, audio, screenshot, recording, save, or replay.
+Users must supply their own game assets. The repository does not include a game disc,
+BIOS, executable, extracted stream, retail image, audio file, screenshot, recording,
+save, or replay.
 
-The C1 repositories do not provide an express root license. Public visibility, if enabled, does
-not relicense their work or make this repository open source. The current plan covers source and
-documentation only; it does not approve a compiled release or hosted playable site.
+The C1 source repositories have no stated root license. Public access would not
+relicense their work or make this project open source. The current plan covers source
+and documentation only. It does not approve a compiled release or a hosted playable
+site.
 
-Read the publication documents before relying on or sharing this work:
+Read these documents before you use or share the project:
 
 - [License notice](LICENSE.md)
 - [Rights and licenses](RIGHTS_AND_LICENSES.md)
-- [Copyright and provenance notice](NOTICE.md)
+- [Copyright and source notice](NOTICE.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Privacy](PRIVACY.md)
-- [Security reporting](SECURITY.md)
+- [Security reports](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 - [Documentation guide](docs/README.md)

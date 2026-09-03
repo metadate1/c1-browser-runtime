@@ -1,28 +1,34 @@
-# Engine provenance
+# Engine source record
 
-The engine snapshot is derived from:
+The engine snapshot comes from:
 
-- [`wurlyfox/c1`](https://github.com/wurlyfox/c1), upstream commit
-  `256fdcef59f15a190290cc19db3fa9a707843b69`
-- [`mateusfavarin/c1`](https://github.com/mateusfavarin/c1), `windows` branch commit
-  `408d6409afadc1202230ac1183d4d7f40292b87c`
+- [`wurlyfox/c1`](https://github.com/wurlyfox/c1) commit
+  `256fdcef59f15a190290cc19db3fa9a707843b69`; and
+- the `windows` branch of [`mateusfavarin/c1`](https://github.com/mateusfavarin/c1) at
+  commit `408d6409afadc1202230ac1183d4d7f40292b87c`.
 
-The Mateus branch contains 67 commits of layout, crash, gameplay, collision, controller, and Windows/Clang fixes beyond the Wurlyfox snapshot. Its bundled Windows libraries and binaries were deliberately not imported.
+The Mateus branch has 67 commits after the Wurlyfox snapshot. They change layout, crash
+handling, game behavior, collision, controller support, Windows support, and Clang
+support. This repository did not import the bundled Windows libraries or binaries.
 
-The snapshot was imported into this repository as a single commit. A blob-level comparison of
-that initial commit (`e9ab8c72f4364b4b0192af10c14affaadda08d15`) with the Mateus revision found
-94 byte-identical engine files, no differing files at shared paths, 10 browser-specific or
-repository-specific additions, and 157 omitted upstream paths. The omitted paths are mainly
-bundled desktop dependencies and Visual Studio files.
+The project imported the engine snapshot as one commit. It did not preserve upstream
+Git history. A blob comparison between initial commit
+`e9ab8c72f4364b4b0192af10c14affaadda08d15` and the fixed Mateus revision found:
 
-The original upstream commit history is not preserved here. GitHub's contributor records for the
-named repositories identify Wurly Fox, Mateus Favarin, and ManDude; the upstream histories remain
-authoritative.
+- 94 byte-identical engine files;
+- no differences at paths that both trees contain;
+- 10 additions specific to this repository or browser work; and
+- 157 omitted upstream paths.
 
-Neither C1 repository provides an express root license for the engine code. Public availability
-of those repositories does not grant an open-source license. Default copyright remains with the
-respective authors and rights holders.
+Most omitted paths contain desktop dependencies and Visual Studio files.
 
-See the repository-level [license notice](../LICENSE.md),
-[rights explanation](../RIGHTS_AND_LICENSES.md), and [NOTICE](../NOTICE.md) before relying on or
-redistributing this source.
+The named GitHub repositories list Wurly Fox, Mateus Favarin, and ManDude as
+contributors. Their source history remains the controlling record.
+
+Neither C1 repository has a stated root license for the engine. Public source does not
+give an open-source license. The respective authors and rights holders keep their
+rights.
+
+Before you use or redistribute this source, read the project
+[license notice](../LICENSE.md), [rights explanation](../RIGHTS_AND_LICENSES.md), and
+[NOTICE](../NOTICE.md).

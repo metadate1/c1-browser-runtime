@@ -1,33 +1,36 @@
 # Public source-release checklist
 
-Use this checklist before changing the GitHub repository from private to public.
+Use this checklist before you change the GitHub repository from private to public.
 
-This checklist covers source publication only. It does not approve an open-source license, hosted
-game, compiled release, app package, or commercial product.
+This checklist covers source access only. It does not approve an open-source license,
+hosted game, compiled release, application package, or commercial product.
 
 ## 1. Confirm the publication model
 
-- [x] Describe the project as **source-available research software**, not open source.
-- [x] Keep [LICENSE.md](../LICENSE.md) explicit that there is no project-wide license.
-- [x] Publish source and documentation only.
-- [x] Exclude `dist/`, local game data, screenshots, videos, replays, profiles, and save files.
-- [x] Keep the user-supplied-file model: users select their own supported game data locally.
-- [x] Do not provide or link to a game disc image, BIOS, extracted streams, or other game data.
+- [x] Call the project **source-available research software**, not open source.
+- [x] Keep [LICENSE.md](../LICENSE.md) clear that there is no project-wide license.
+- [x] Publish only source and documents.
+- [x] Exclude `dist/`, local game data, screenshots, videos, replays, profiles, and save
+  files.
+- [x] Require users to select their own supported game data locally.
+- [x] Do not provide or link to a game disc image, BIOS, extracted streams, or other
+  game data.
 
-## 2. Review the unresolved rights risk
+## 2. Review the unresolved rights issue
 
 - [x] Read [RIGHTS_AND_LICENSES.md](../RIGHTS_AND_LICENSES.md).
 - [x] Read the factual [legal-review brief](LEGAL_REVIEW_BRIEF.md).
 - [x] Confirm that [NOTICE.md](../NOTICE.md) and
-  [engine/UPSTREAM.md](../engine/UPSTREAM.md) identify known source references.
-- [x] The owner's chosen boundary is recorded in
+  [engine/UPSTREAM.md](../engine/UPSTREAM.md) name the known source references.
+- [x] Record the owner's chosen boundary in
   [PUBLICATION_DECISION.md](PUBLICATION_DECISION.md).
-- [ ] Obtain advice from a qualified lawyer if the owner wants a legal opinion. Repository checks
-  cannot provide one.
+- [ ] Ask a qualified lawyer if the owner wants legal advice. Repository checks cannot
+  give legal advice.
 
-Do not add an open-source license unless the project has authority to license every covered file.
+Do not add an open-source license unless the project has authority to license every
+covered file.
 
-## 3. Audit files and Git history
+## 3. Audit the files and Git history
 
 ```bash
 git fetch --prune origin
@@ -35,10 +38,10 @@ bash scripts/check-public-release.sh --remote origin
 ```
 
 - [x] The audit exits with status zero.
-- [x] `engine/doc/memmap.xlsx` is the only binary blob and matches its pinned hash.
-- [x] No reachable commit contains game data, executables, generated Wasm, saves, captures,
-  archives, secrets, or another unexpected binary.
-- [x] `git status --ignored` places local data and generated output under ignored paths.
+- [x] `engine/doc/memmap.xlsx` is the only binary blob and has the expected hash.
+- [x] No reachable commit contains game data, an executable, generated Wasm, a save,
+  capture, archive, secret, or other unexpected binary.
+- [x] `git status --ignored` puts local data and generated output under ignored paths.
 - [x] Every remote branch and tag is intentional.
 
 ## 4. Run the release checks
@@ -49,43 +52,43 @@ npm run build
 git diff --check
 ```
 
-- [x] Every command exits with status zero.
-- [x] Generated `dist/` output remains ignored and uncommitted.
-- [x] Public documentation describes current behavior and does not overstate retail parity.
+- [x] Each command exits with status zero.
+- [x] Generated files in `dist/` remain ignored and uncommitted.
+- [x] Public documents describe current behavior and do not claim full retail parity.
 
 ## 5. Configure GitHub
 
 - [x] Keep `main` as the default branch.
 - [ ] Require the CI `verify` job before merge when the repository plan supports it.
-- [ ] Enable secret scanning and push protection when available.
-- [ ] Enable private vulnerability reporting after visibility changes.
-- [x] Keep GitHub Pages and release-package automation disabled until hosted or binary
-  distribution is reviewed separately.
+- [ ] Enable secret scanning and push protection when GitHub makes them available.
+- [ ] Enable private vulnerability reporting after the visibility change.
+- [x] Keep GitHub Pages and release-package automation off until the project reviews
+  hosted or binary distribution.
 - [x] Use **source-available research runtime** in the repository description.
 - [x] Do not select an open-source license in GitHub settings.
-- [x] Point contribution requests to [CONTRIBUTING.md](../CONTRIBUTING.md).
+- [x] Send contribution requests to [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## 6. Check the public repository
 
-After visibility changes:
+After the visibility change:
 
 - [ ] Inspect the public file list and downloadable source archive.
 - [ ] Clone the public repository into a new directory.
-- [ ] Run `bash scripts/check-public-release.sh --remote origin` from that fresh clone.
-- [ ] Confirm that GitHub does not label the project MIT, Apache, GPL, or another open-source
-  license.
-- [ ] Confirm that the README links to the license, rights, notices, privacy, security, and
-  contribution documents.
+- [ ] Run `bash scripts/check-public-release.sh --remote origin` in the new clone.
+- [ ] Confirm that GitHub does not label the project as MIT, Apache, GPL, or another
+  open-source license.
+- [ ] Confirm that the README links to the license, rights, notices, privacy, security,
+  and contribution documents.
 
-Treat a credible rights complaint or takedown request as a release issue. Preserve the relevant
-records and handle it privately; do not debate ownership in a public issue thread.
+Treat a credible rights complaint or removal request as a release issue. Keep relevant
+records. Handle the report in private instead of debating ownership in a public issue.
 
-## Later: changing the distribution model
+## Later changes to distribution
 
-A hosted playable site, compiled release, package, or open-source license is a new decision. Before
-making that change:
+A hosted playable site, compiled release, package, or open-source license needs a new
+decision. Before such a change:
 
-- identify the new files and data flows;
-- review upstream, game, dependency, trademark, and privacy obligations;
+- list the new files and data flows;
+- review source, game, dependency, trademark, and privacy duties;
 - update the rights, privacy, security, and contribution documents; and
 - repeat the history and release audits.

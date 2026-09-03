@@ -4,25 +4,25 @@
 
 **Decision owner:** Dominykas Norvilas (`metadate1`)
 
-The project owner directed C1 Browser Runtime to be prepared for public source visibility under a
-restricted, source-available boundary.
+The owner asked the project to prepare C1 Browser Runtime for public source access. The
+project will use a restricted, source-available boundary.
 
-The intended publication model is:
+The planned publication has these limits:
 
-- source and documentation only;
-- no game disc, ROM, BIOS, executable, extracted stream, save, replay, screenshot, recording, or
-  other game-derived file;
-- no compiled native release, Wasm release, package, or hosted playable site as part of this source
-  publication;
-- users supply their own supported game data locally; and
-- no claim that this repository is open source, clean-room, affiliated with, or endorsed by any
-  game, console, or upstream rights holder.
+- It contains source and documents only.
+- It contains no game disc, ROM, BIOS, executable, extracted stream, save, replay,
+  screenshot, recording, or other file made from game data.
+- It does not include a compiled native release, Wasm release, package, or hosted
+  playable site.
+- Users must supply their own supported game data and keep it local.
+- The project does not claim to be open source, clean-room, affiliated with, or
+  endorsed by any game, console, or source rights holder.
 
-The owner acknowledges that this repository directly contains source derived from the unlicensed
-C1 lineage, as explained in [RIGHTS_AND_LICENSES.md](../RIGHTS_AND_LICENSES.md) and the factual
-[legal-review brief](LEGAL_REVIEW_BRIEF.md). Repository safeguards can reduce accidental disclosure
-of game data or secrets. They do not create redistribution permission, settle upstream or game
-rights, or provide a legal opinion.
+The owner knows that this repository contains source from the C1 lineage, which has no
+stated root license. [RIGHTS_AND_LICENSES.md](../RIGHTS_AND_LICENSES.md) and the
+[legal-review brief](LEGAL_REVIEW_BRIEF.md) explain this issue. Repository checks can
+reduce accidental leaks of game data or secrets. They cannot create redistribution
+rights, settle source or game rights, or replace legal advice.
 
-Changing repository visibility remains a separate action. This record does not authorize a
-visibility change by itself.
+Changing repository visibility is a separate action. This record alone does not permit
+that change.

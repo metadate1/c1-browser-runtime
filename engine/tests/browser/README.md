@@ -1,6 +1,6 @@
 # Browser flow checks
 
-Build the WebAssembly runtime and start the harness with the complete retail
+Build the WebAssembly runtime. Then start the test harness with the complete retail
 stream set:
 
 ```sh
@@ -8,27 +8,29 @@ make web
 PORT=4174 node engine/tests/browser/server.mjs local-data/streams
 ```
 
-The flow scenarios auto-start, remove only the C1 card/resume keys on the
-harness origin, and keep `HARNESS RUNNING` until the complete route is proven.
+Each test starts by itself. It removes only the C1 card and resume keys from the test
+origin. `HARNESS RUNNING` stays visible until the test proves the complete route.
 
-- `http://127.0.0.1:4174/?scenario=title-attract-intro`
-  waits at the main menu without input, requires attract mode to enter Intro
-  (`0x38`), requires the retail delayed-dialogue schedule to remain staggered
-  without any completed dialogue sample being re-keyed,
-  rejects severe foreground audio-callback stalls, requires sustained rendered
-  frames and camera motion, and requires Intro to return to Title (`0x19`).
-- `http://127.0.0.1:4174/?scenario=level-complete`
-  boots N. Sanity Beach, skips its entrance camera with retail Cross input,
-  waits for stable gameplay, sends the retail Warp event, requires the route
-  `0x09 -> 0x2D`, and requires sustained rendered Level Complete frames.
+- `http://127.0.0.1:4174/?scenario=title-attract-intro` waits at the main menu. It
+  requires the idle flow to enter Intro (`0x38`). It checks that retail delayed speech
+  stays staggered and that a completed speech sample does not get a new key. It rejects
+  long foreground audio-callback stalls. It also requires continuous rendered frames,
+  camera movement, and a return to Title (`0x19`).
+- `http://127.0.0.1:4174/?scenario=level-complete` starts N. Sanity Beach. It skips the
+  entrance camera with retail Cross input, waits for stable game play, and sends the
+  retail Warp event. It requires the route `0x09 -> 0x2D` and continuous rendered Level
+  Complete frames.
 
-Both scenarios also reject texture failures, missing texture pages, GL errors,
-and primitive-arena overflows. Read the machine-friendly result with
-`window.__c1HarnessSnapshot()` or the JSON in `#metrics`.
+Both tests reject texture failures, missing texture pages, GL errors, and primitive
+arena overflows. Read the machine result from `window.__c1HarnessSnapshot()` or from the
+JSON in `#metrics`.
 
-The Intro audio assertions require the browser exports
-`C1GetAudioDelayedVoiceCount` and `C1GetAudioCompletedSampleRekeyCount`. Their
-pure state-machine regression checks can be run without a browser:
+The Intro audio checks need these browser exports:
+
+- `C1GetAudioDelayedVoiceCount`
+- `C1GetAudioCompletedSampleRekeyCount`
+
+You can run their pure state-machine checks without a browser:
 
 ```sh
 node engine/tests/browser/audio-regression_test.mjs

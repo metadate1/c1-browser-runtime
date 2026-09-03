@@ -1,42 +1,43 @@
 # Privacy
 
-C1 Browser Runtime is designed to use game files locally in the browser.
+C1 Browser Runtime uses game files locally in your browser.
 
-## Selected game files
+## Game files that you select
 
-When a user selects a disc image or extracted NSD/NSF streams, the browser reads those files for
-the current session and copies recognized streams into the Wasm in-memory filesystem. The
-application has no game-file upload endpoint and does not include telemetry, analytics,
+When you select a disc image or NSD and NSF streams, the browser reads them for the
+current session. It copies known streams into the Wasm in-memory file system. The
+application has no game-file upload endpoint. It also has no telemetry, analytics,
 advertising, or user accounts.
 
-Selected game files are not written to browser persistence. They must be selected again after a
+The browser does not save selected game files. You must select them again after a page
 reload.
 
-## Saved browser data
+## Progress saved by the browser
 
-The runtime can store two small, versioned records in origin-scoped `localStorage`:
+The runtime can save two small, versioned records in origin-specific `localStorage`:
 
-- `c1.virtual-memory-card.v1`, containing up to fifteen 128-byte virtual card payloads; and
-- `c1.browser-resume.v1`, containing one 128-byte automatic-resume payload.
+- `c1.virtual-memory-card.v1` can contain up to fifteen 128-byte virtual memory-card
+  payloads.
+- `c1.browser-resume.v1` can contain one 128-byte automatic-resume payload.
 
-Invalid resume records may be quarantined under a timestamped key beginning with
-`c1.browser-resume.v1.invalid.`. These records stay in that browser profile and origin until the
-user clears the site's data.
+If a resume record is invalid, the runtime can quarantine it under a timestamped key
+that starts with `c1.browser-resume.v1.invalid.`. These records stay in the current
+browser profile and origin until you clear the site's data.
 
-Different hosts, ports, and protocols have separate browser storage. Clearing site data removes
-the virtual card and automatic-resume records.
+Different hosts, ports, and protocols have separate browser storage. Clearing site
+data removes both the virtual card and automatic resume records.
 
 ## Network boundary
 
-The included local server serves static files from the selected build directory. The application
-source contains no API client or upload service. A third party that deploys or modifies this code
-can change that behavior; users should review the deployment they choose to trust.
+The included local server only serves static files from the build directory that you
+select. The application source has no API client or upload service.
 
-If a future deployment adds a server feature, analytics, or another data flow, this document and
-the application must be updated before that feature is published.
+A third party can change this behavior in a modified build or deployment. Review the
+deployment before you trust it. If a future version adds a server feature, analytics,
+or another data flow, the project must update this document before release.
 
 ## Reports
 
-Do not attach a disc image, BIOS, extracted stream, save, screenshot, recording, or other game data
-to a public issue. Report suspected disclosure privately as described in
-[SECURITY.md](SECURITY.md).
+Do not attach a disc image, BIOS, extracted stream, save, screenshot, recording, or
+other game data to a public issue. Use the private process in
+[SECURITY.md](SECURITY.md) to report a possible data leak.
