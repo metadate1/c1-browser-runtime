@@ -1,6 +1,8 @@
 EMSDK_DIR ?= $(HOME)/.cache/emsdk
 EMCC ?= $(EMSDK_DIR)/upstream/emscripten/emcc.py
-EMSDK_PYTHON ?= $(firstword $(wildcard $(EMSDK_DIR)/python/*_64bit/bin/python3))
+EMSDK_PYTHON ?= $(firstword \
+	$(wildcard $(EMSDK_DIR)/python/*_64bit/bin/python3) \
+	$(shell command -v python3 2>/dev/null))
 DIST_DIR := dist
 OPT ?= -O2
 HOST_UNAME := $(shell uname -s)

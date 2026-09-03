@@ -1,0 +1,37 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Audit public-release boundary
+        run: bash scripts/check-public-release.sh "$GITHUB_SHA"
+      - name: Install pinned Node runtime
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22.16.0
+      - name: Native tests
+        run: npm test
+      - name: Install pinned Emscripten SDK
+        env:
+          EMSDK_VERSION: 6.0.2
+        run: npm run setup
+      - name: Browser build
+        run: npm run build
+      - name: Generated output remains untracked
+        run: |
+          test -z "$(git status --short --untracked-files=all)"

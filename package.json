@@ -2,6 +2,7 @@
   "name": "c1-browser-runtime",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "scripts": {
     "setup": "./scripts/setup-emsdk.sh",

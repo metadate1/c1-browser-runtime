@@ -1,7 +1,25 @@
-# Copyright and distribution notice
+# Copyright, provenance, and distribution notice
 
-This workspace does not include Crash Bandicoot disc data, art, audio, executables, or ROM images. Game data is supplied locally by the user and ignored by Git.
+C1 Browser Runtime does not include *Crash Bandicoot* disc sectors, executables, artwork, audio,
+textures, level streams, ROM images, or other proprietary game data. Users select their own
+supported game files locally. The runtime does not upload those files.
 
-The C1 engine sources are derived from public GitHub repositories that do not contain an express project license. Default copyright therefore applies. This workspace should be treated as local research and interoperability work unless the relevant authors grant redistribution rights. Do not publish a hosted build or source derivative without resolving that permission question and obtaining appropriate legal advice for the original game rights.
+The engine is derived from these public source snapshots:
 
-TinySoundFont is MIT-licensed and TinyMidiLoader carries a zlib license; their notices and pinned provenance are stored beside the vendored headers.
+- [`wurlyfox/c1`](https://github.com/wurlyfox/c1) at
+  `256fdcef59f15a190290cc19db3fa9a707843b69`; and
+- [`mateusfavarin/c1`](https://github.com/mateusfavarin/c1), `windows` branch, at
+  `408d6409afadc1202230ac1183d4d7f40292b87c`.
+
+Neither repository provides an express root license. The imported engine therefore remains under
+the copyright of its respective authors and rights holders. The repository maintainer cannot and
+does not grant permission for that upstream material. See [engine/UPSTREAM.md](engine/UPSTREAM.md)
+and [RIGHTS_AND_LICENSES.md](RIGHTS_AND_LICENSES.md).
+
+TinySoundFont is MIT-licensed and TinyMidiLoader carries a zlib license. Their notices and pinned
+provenance are stored beside the vendored headers and summarized in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+*Crash Bandicoot*, PlayStation, Sony, Naughty Dog, and related names and marks belong to their
+owners. This is an independent, unofficial interoperability project. It is not affiliated with or
+endorsed by those owners.

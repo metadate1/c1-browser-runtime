@@ -13,6 +13,32 @@ node_modules/
 captures/
 screenshots/
 debug-dumps/
+artifacts/
+recordings/
+browser-profile/
+playwright-report/
+test-results/
+coverage/
+memory-card.json
+resume.json
+*.sav
+*.save
+*.state
+*.wasm
+*.wat
+*.webm
+*.mp4
+*.mov
+*.mp3
+*.flac
+*.ogg
+*.har
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
 
 # Never commit copyrighted game/disc data.
 *.[Bb][Ii][Nn]

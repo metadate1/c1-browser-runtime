@@ -1,8 +1,16 @@
 # C1 browser runtime
 
-This workspace compiles the most complete public C1 engine lineage to WebAssembly, loads legally owned Crash Bandicoot disc data locally, and runs it in a browser with keyboard, gamepad, touch, fullscreen, SFX, and software-synthesized music support.
+This workspace compiles the public C1 engine lineage to WebAssembly, loads legally owned
+*Crash Bandicoot* disc data locally, and runs it in a browser with keyboard, gamepad, touch,
+fullscreen, SFX, and software-synthesized music support.
 
-It is a real source port, not a bundled ROM or emulator. No copyrighted game data is included or uploaded.
+It is a source port, not a bundled ROM or emulator. No proprietary game data is included or
+uploaded.
+
+> **Source and rights notice:** This repository is source-available research software, not open
+> source. It directly contains code derived from C1 repositories that have no express root
+> license. Read [LICENSE.md](LICENSE.md), [RIGHTS_AND_LICENSES.md](RIGHTS_AND_LICENSES.md), and
+> [NOTICE.md](NOTICE.md) before using or distributing it.
 
 ## Run it
 
@@ -79,4 +87,20 @@ This is not yet a claim of retail parity. A complete playthrough has not certifi
 
 ## Legal boundary
 
-Game assets remain user-supplied and local. The C1 repositories do not provide an express root license, so this repository must remain private unless distribution permission is resolved with the relevant contributors and the original-game rights are reviewed. See `NOTICE.md` and `engine/UPSTREAM.md`.
+Game assets remain user-supplied and local. The source repository does not include a game disc,
+BIOS, executable, extracted stream, retail artwork, audio, screenshot, recording, save, or replay.
+
+The C1 repositories do not provide an express root license. Public visibility, if enabled, does
+not relicense their work or make this repository open source. The current plan covers source and
+documentation only; it does not approve a compiled release or hosted playable site.
+
+Read the publication documents before relying on or sharing this work:
+
+- [License notice](LICENSE.md)
+- [Rights and licenses](RIGHTS_AND_LICENSES.md)
+- [Copyright and provenance notice](NOTICE.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
+- [Privacy](PRIVACY.md)
+- [Security reporting](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Documentation guide](docs/README.md)
