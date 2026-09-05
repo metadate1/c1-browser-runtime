@@ -1,8 +1,9 @@
-# C1 Browser Runtime
+# C1 Browser Runtime — a C/WebAssembly runtime for Crash Bandicoot
 
-C1 Browser Runtime builds the public C1 engine lineage as WebAssembly. It lets you use
-your own *Crash Bandicoot* disc data in a browser. It supports keyboards, gamepads,
-touch controls, full screen, sound effects, and software-made music.
+C1 Browser Runtime builds the C1 engine lineage as WebAssembly for the original 1996
+PlayStation release of *Crash Bandicoot*. It lets you use data from your own game disc
+in a browser. It supports keyboards, gamepads, touch controls, full screen, sound
+effects, and software-made music.
 
 This project is a source port. It is not a ROM bundle or a PlayStation emulator. The
 repository has no proprietary game data. The browser does not upload the files that
