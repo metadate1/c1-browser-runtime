@@ -1,6 +1,7 @@
 {
   "name": "c1-browser-runtime",
   "version": "0.1.0",
+  "description": "An unofficial C/WebAssembly research runtime for Crash Bandicoot using user-supplied game data.",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
